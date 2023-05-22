@@ -1,0 +1,32 @@
+repositories {
+    mavenCentral()
+    /**/
+    maven { 
+        url 'http://maven.vl-dz.net/snapshots/' 
+        allowInsecureProtocol = true
+    }
+    /**/
+}
+
+dependencies {
+    implementation project(':scd')
+    //
+    // https://mvnrepository.com/artifact/commons-cli/commons-cli
+    implementation group: 'commons-cli', name: 'commons-cli', version: '1.5.0'
+    //
+    implementation 'be.kuleuven.pmlib:pm-core:0.0.20-SNAPSHOT'
+    implementation 'be.kuleuven.pmlib:pm-wrappers:0.0.20-SNAPSHOT'
+    //
+    implementation 'be.kuleuven.weightgen:weightgen:0.0.5-SNAPSHOT'
+    //
+    //implementation 'be.kuleuven.wg4ps:eclat:0.0.2-SNAPSHOT'
+    //
+    //implementation fileTree(dir: '../lib', include: 'eclat-0.0.2-SNAPSHOT.jar')
+    implementation fileTree(dir: '../lib', include: 'flexics-core-0.0.1-SNAPSHOT.jar')
+    //implementation fileTree(dir: '../lib', include: 'weightgen-0.0.3-SNAPSHOT.jar')
+}
+
+mainClassName = 'fr.phdhien.dispale.Main'
+run {
+    systemProperties 'logback.configurationFile': 'logback.xml'
+}

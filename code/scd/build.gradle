@@ -1,0 +1,61 @@
+mainClassName = 'be.kuleuven.scd.Main'
+run {
+    systemProperties 'logback.configurationFile': 'logback.xml'
+}
+
+test {
+    systemProperties 'logback.configurationFile': 'logback-test.xml'
+}
+
+task makeOriginal(type: Exec) {
+    inputs.files 'cmd_line.cc', 'cmd_line.h', 'cmd_option.h', 'Losses.h', 'scd.cc'
+    outputs.files 'cmd_line.o', 'scd.o', 'scd'
+
+    workingDir 'SCD'
+    commandLine '/usr/bin/make'
+}
+
+task cleanOriginal(type: Exec) {
+    workingDir 'SCD'
+    commandLine '/usr/bin/make', 'clean'
+}
+/*
+task prepareArcene {
+    final rawExampleFile = new File('SCD', 'arcene_raw')
+    final exampleFile = new File('SCD', 'arcene_examples')
+    final labelFile = new File('SCD', 'arcene_labels')
+
+    outputs.files exampleFile, labelFile
+
+    doLast {
+        if (!labelFile.exists()) {
+            logger.warn("Performs a naïve transposition of a 100x10000 dataset, might take some time")
+
+            final uciUrl = 'https://archive.ics.uci.edu/ml/machine-learning-databases/arcene/ARCENE/arcene_train'
+            new URL("${uciUrl}.labels").withInputStream{ url -> labelFile.withOutputStream{ it << url } }
+            logger.lifecycle('Downloaded the `arcene`   label file')
+
+            new URL("${uciUrl}.data").withInputStream{ url -> rawExampleFile.withOutputStream{ it << url } }
+            logger.lifecycle('Downloaded the `arcene` example file, starting transposition')
+
+            exampleFile.text = "100 10000\n"
+            rawExampleFile.readLines().collect { it.split() }.transpose().eachWithIndex { List<String> featureValues, int j ->
+                final values = featureValues.collect { it.toDouble() }
+                final scale  = [ values.min().abs(), values.max().abs() ].max()
+                values.eachWithIndex { double v, int i -> if (v != 0) exampleFile.append("$i ${v/scale} ") }
+                exampleFile.append('\n')
+
+                logger.debug("Processed feature $j of `arcene`")
+            }
+        }
+    }
+}
+
+test.dependsOn(makeOriginal, prepareArcene)
+clean.dependsOn(cleanOriginal)
+*/
+idea {
+    module {
+        excludeDirs += file('SCD')
+    }
+}

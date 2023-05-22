@@ -1,0 +1,19 @@
+<configuration>
+    <appender name="CONS" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>%-8r - %-5logger - %msg%n</pattern>
+        </encoder>
+        <target>System.err</target>
+    </appender>
+
+    <root level="INFO">
+        <appender-ref ref="CONS"/>
+    </root>
+
+    <logger name="EclatXOR"       level="OFF"/>
+    <logger name="ParitySystem"   level="OFF"/>
+    <logger name="EclatWeightMC"  level="OFF"/>
+    <logger name="EclatWeightGen" level="OFF"/>
+    <logger name="EFlexics"       level="OFF"/>
+    <logger name="SCD"            level="INFO"/>
+</configuration>

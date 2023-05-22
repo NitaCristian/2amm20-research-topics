@@ -1,0 +1,76 @@
+configure(allprojects) {
+    apply plugin: 'idea'
+    apply plugin: 'eclipse'
+    
+    idea {
+        module {
+            downloadJavadoc = true
+            downloadSources = true
+        }
+    }
+}
+
+configure(subprojects) {
+    //apply plugin: 'java'
+    apply plugin: 'scala'
+    apply plugin: 'application'
+    
+    group = 'fr.phdhien.dispale'
+    version = '0.0.1-SNAPSHOT'
+
+    repositories {
+        mavenCentral()
+        //maven{ url uri('lib') }
+        
+        /*
+        maven { 
+            url 'http://maven.vl-dz.net/snapshots/' 
+            //allowInsecureProtocol true
+        }
+        */
+    }
+
+    dependencies {
+        implementation 'org.scala-lang:scala-library:2.11.8'
+        implementation 'com.typesafe.scala-logging:scala-logging_2.11:3.1.0'
+        runtimeOnly 'ch.qos.logback:logback-classic:1.1.3'
+
+        testImplementation 'junit:junit:4.11'
+        testImplementation 'org.scalatest:scalatest_2.11:2.2.1'
+    }
+    
+    /**/
+    compileJava {
+        sourceCompatibility = 8
+        targetCompatibility = 8
+    }
+    /**/
+    
+    configurations.all {
+        resolutionStrategy.cacheChangingModulesFor 1, 'minutes'
+    }
+}
+
+configure(subprojects - project(':scd')) {
+    repositories {
+    	/**/
+        maven { 
+            url 'http://maven.vl-dz.net/snapshots/' 
+            allowInsecureProtocol = true
+        }
+        /**/
+    }
+
+    dependencies {
+        //implementation 'be.kuleuven.pmlib:pm-core:0.0.20-SNAPSHOT'
+        implementation 'be.kuleuven.wg4ps:eclat:0.0.2-SNAPSHOT'
+    }
+}
+
+idea {
+    module {
+        excludeDirs += file('.idea')
+        excludeDirs += file('gradle')
+        inheritOutputDirs = true
+    }
+}
