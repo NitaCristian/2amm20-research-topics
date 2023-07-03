@@ -111,13 +111,35 @@ def get_method_config(method):
 #=====================================================================================
 #=====================================================================================
 #
+def check_if_project_is_built(root_dir):
+    code_dir = os.path.realpath(os.path.join(root_dir, "code"))
+    dispale_dir = os.path.realpath(os.path.join(code_dir, "dispale", "build", "libs"))
+    scd_dir = os.path.realpath(os.path.join(code_dir, "scd", "build", "libs"))
+    #
+    is_built = False
+    if os.path.exists(dispale_dir) and os.path.exists(scd_dir):
+        is_built = True
+    #
+    return is_built
+#
+#++++++++++++++++++++++++++++++
+#
 def run_dispale(queue, config, root_dir, results_dir):
     try:
+        print()
         (i, timeLimit, dataname, data_file, freq, minsup, method, features, querySize, queryRetention, ranker) = config[:11]
         #
         if not os.path.exists(data_file):
-            print(f"\nIMPOSSIBLE TO LAUNCH EXECUTION OF {project}.\nTHE GIVEN DATASET IS MISSING...\n")
-            sys.exit(1)
+            print(f"    IMPOSSIBLE TO LAUNCH EXECUTION OF DISPALE.")
+            print(f"    THE GIVEN DATASET IS MISSING \n")
+            sys.exit(0)
+        #
+        is_built = check_if_project_is_built(root_dir)
+        if not is_built:
+            print(f"    IMPOSSIBLE TO LAUNCH EXECUTION OF DISPALE.")
+            print(f"    THE PROJECT IS NOT YET BUILT ")
+            print(f"    USE SCRIPT 'build-code.py' \n")
+            sys.exit(0)
         #
         #-------------------------------------------------------------------
         #
@@ -177,7 +199,7 @@ def run_dispale(queue, config, root_dir, results_dir):
         command += f"fr.phdhien.dispale.Main {argument} > {out_file}"
         #
         logs_ = open(logs_file, "w")
-        subprocess.run([command + "; echo \" \nExit status: $?\" "], shell=True, check=True, stdout=logs_)
+        subprocess.run([command + "; echo \" \nExit status: $?\" "], shell=True, check=True, stdout=logs_, stderr=logs_)
         #
     finally:
         queue.put(mp.current_process().name)
