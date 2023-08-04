@@ -31,7 +31,7 @@ configure(subprojects) {
     }
 
     dependencies {
-        implementation 'org.scala-lang:scala-library:2.11.8'
+        implementation 'org.scala-lang:scala-library:2.11.12'
         implementation 'com.typesafe.scala-logging:scala-logging_2.11:3.1.0'
         runtimeOnly 'ch.qos.logback:logback-classic:1.1.3'
 
