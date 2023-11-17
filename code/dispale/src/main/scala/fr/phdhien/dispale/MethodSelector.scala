@@ -34,6 +34,8 @@ class MethodSelector {
   var dataset: Dataset[Set[Int]] = null
   var dataset_path: String = "zoo-1.txt"
   var fimi_dataset_path: String = "zoo-1.txt"
+  var directory: String = "/results/"
+  var run_id: Int = 1
   var minsup: Int = 1
   var querySize: Int = 5
   var queryRetention: Int = 0
@@ -115,16 +117,19 @@ class MethodSelector {
   
   def select_method(): Unit = {
     letsip_instance = method match {
-      case "letsip" => 
+    
+      case "letsip" | "letsipHUI" => 
         // letsip original
-        LetSIP(dataset=dataset, datasetPath=fimi_dataset_path, minsup=minsup,
+        LetSIP(dataset=dataset, datasetPath=dataset_path,directory=directory, 
+                                  run_id=run_id, minsup=minsup,
                                   jmax=jmax, user=ranker, params=params, oracle=oracle,
                                   listFeatures=allFeatures, seed=seed)
-      case "dispale" =>
+      case "dispale" | "dispaleHUI" =>
         // letsip ++ discriminating patterns
         // --> (learning on Transactions consider the transactions inside the
         // --> the discriminating pattern cover
-        Dispale(dataset=dataset, datasetPath=fimi_dataset_path, minsup=minsup,
+        Dispale(dataset=dataset, datasetPath=dataset_path,datasetPathFimi=fimi_dataset_path, directory=directory,
+                                  run_id=run_id, minsup=minsup,
                                   jmax=jmax, user=ranker, params=params, oracle=oracle,
                                   aggregation_function=aggregation, listFeatures=allFeatures, 
                                   listFeatures_count=allFeatures_count, listFeatures_str=allFeatures_str_tab, seed=seed)
@@ -132,7 +137,8 @@ class MethodSelector {
         // letsip ++ discriminating patterns
         // --> (learning on Transactions consider the common transactions between
         // --> the discriminating pattern and all the patterns of the query's cover
-        Dispale_2(dataset=dataset, datasetPath=fimi_dataset_path, minsup=minsup,
+        Dispale_2(dataset=dataset,datasetPath=dataset_path, datasetPathFimi=fimi_dataset_path,directory=directory, 
+                                  run_id=run_id, minsup=minsup,
                                   jmax=jmax, user=ranker, params=params, oracle=oracle,
                                   aggregation_function=aggregation, listFeatures=allFeatures, 
                                   listFeatures_count=allFeatures_count, listFeatures_str=allFeatures_str_tab, seed=seed)
@@ -140,7 +146,7 @@ class MethodSelector {
     // letsip_instance
   }
   
-  def select_method_simulation(method: String, dataset: Dataset[Set[Int]], datasetPath: String, minsup: Int,
+  def select_method_simulation(method: String, dataset: Dataset[Set[Int]], datasetPath: String,datasetPathFimi: String,directory:String, minsup: Int,
                     rank_function: Ranker, params: Parameters, listFeatures: Array[Features],
                     listFeatures_str: Array[String], listFeatures_count: Array[Int], eta: Double = 0.15,
                     jmax: Double = 0.05, aggreg: String = "lin", oracle: String = "eflexics",
@@ -148,27 +154,28 @@ class MethodSelector {
     letsip_instance = method match {
       case "letsip" => 
         // letsip original
-        LetSIP(dataset=dataset, datasetPath=datasetPath, minsup=minsup,
+        LetSIP(dataset=dataset, datasetPath=datasetPath, minsup=minsup,directory=directory, run_id=run_id,
                                   jmax=jmax, user=rank_function, params=params, oracle=oracle,
                                   listFeatures=listFeatures, seed=seed)
       case "dispale" =>
         // dispale (discriminating patterns)
         // --> (learning on Transactions consider the transactions inside the
         // --> the discriminating pattern cover
-        Dispale(dataset=dataset, datasetPath=datasetPath, minsup=minsup,
-                                  jmax=jmax, user=rank_function, params=params, oracle=oracle,
+        Dispale(dataset=dataset, datasetPath=datasetPath,datasetPathFimi=datasetPathFimi,directory=directory, minsup=minsup,
+                                  run_id=run_id, jmax=jmax, user=rank_function, params=params, oracle=oracle,
                                   aggregation_function=aggreg, listFeatures=listFeatures, 
                                   listFeatures_count=listFeatures_count, listFeatures_str=listFeatures_str, seed=seed)
       case "dispale-2" =>
         // dispale-2 (discriminating patterns)
         // --> (learning on Transactions consider the common transactions between
         // --> the discriminating pattern and all the patterns of the query's cover
-        Dispale_2(dataset=dataset, datasetPath=datasetPath, minsup=minsup,
-                                  jmax=jmax, user=rank_function, params=params, oracle=oracle,
+        Dispale_2(dataset=dataset, datasetPath=datasetPath,datasetPathFimi=datasetPathFimi,directory=directory, minsup=minsup,
+                                  run_id=run_id, jmax=jmax, user=rank_function, params=params, oracle=oracle,
                                   aggregation_function=aggreg, listFeatures=listFeatures, 
                                   listFeatures_count=listFeatures_count, listFeatures_str=listFeatures_str, seed=seed)
     }
   }
+  
   
   //####################################################################################################################
   //####################################################################################################################
@@ -179,10 +186,12 @@ class MethodSelector {
       // There's no parameter set
     } else {
       // required arguments
-      seed = parse_cmd.getOptionValue("seed").toLong
+      //seed = parse_cmd.getOptionValue("seed").toLong
       method = parse_cmd.getOptionValue("method")
       dataset_path = parse_cmd.getOptionValue("data")
       fimi_dataset_path = parse_cmd.getOptionValue("fimi")
+      directory = parse_cmd.getOptionValue("directory")
+      run_id = parse_cmd.getOptionValue("run").toInt
       minsup = parse_cmd.getOptionValue("fmin").toInt
       querySize = parse_cmd.getOptionValue("query").toInt
       nb_iterations = parse_cmd.getOptionValue("iter").toInt
@@ -200,6 +209,7 @@ class MethodSelector {
       oracle = if(parse_cmd.hasOption("oracle")) parse_cmd.getOptionValue("oracle") else "eflexics"
       aggregation = if(parse_cmd.hasOption("aggregation")) parse_cmd.getOptionValue("aggregation").toLowerCase else "lin"
       val features_update = if(parse_cmd.hasOption("features-update")) parse_cmd.getOptionValue("features-update") else "ALL"
+      val weightsFile = if(parse_cmd.hasOption("weights")) parse_cmd.getOptionValue("weights") else null
       
       //****************************************************************************************************************
       // *************************** NOW WE PREPARE THE VARIABLES TO BE USED BY THE PROGRAM ****************************
@@ -211,6 +221,7 @@ class MethodSelector {
         //case "plranker"                => PLRanker
         case "frequencyranker"         => FrequencyRanker
         case "surprisingnessranker"    => SurprisingnessRanker(dataset)
+        case "gaussianranker"	       => GaussianRanker(dataset, seed, weightsFile) //GaussianRanker(dataset,seed)
         case _                         => FrequencyRanker // default case
       }
       //****************************************************************************************************************

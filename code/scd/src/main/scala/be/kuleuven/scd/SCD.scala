@@ -67,7 +67,7 @@ object SCD extends ScdLogging {
       }
     
       val wj = w(j)
-      logSampledFeatureIndex(t, iterations, j, wj)
+      //logSampledFeatureIndex(t, iterations, j, wj)
 
       val gj = examples.view.zipWithIndex.map { case (Example(xi, yi), i) => loss.derivative(z(i), yi) * xi(j) }.sum / m0
       val eta =

@@ -1,6 +1,6 @@
 package fr.phdhien.dispale
 
-import be.kuleuven.flexics.GetWeight
+//import be.kuleuven.flexics.GetWeight
 import be.kuleuven.pmlib.data.Dataset
 import be.kuleuven.pmlib.itemsets.Itemset
 //import be.kuleuven.weightgen._
@@ -12,7 +12,6 @@ import com.typesafe.scalalogging.Logger
 
 trait LearningLogging {
   protected val logger: Logger
-
   protected final def logAction[T](action: => T)(message: String): T = {
     logger.debug(message)
     val actionResult = action
@@ -52,19 +51,22 @@ trait LearningLogging {
     logger.debug(s"Iteration $iteration")
 
   protected final def logIterationOutcome(iteration: Int, query: Array[Itemset],
-                                          learnedWeight: LogisticWeight, client: Ranker): Unit =
+                                          learnedWeight: LogisticWeight, client: Ranker): Unit ={
+    val GetWeight : Itemset => Double={_.getMetadata[Double]("wg4ps.weight").get}
     query.view.zipWithIndex.foreach { case (p, i) =>
       //logger.info(f"$iteration%d;$i%d;${p.size}%d;${client.describe(p)}%s;${wg4ps.GetWeight(p)}%.6f;${learnedWeight(p)}%.6f;${p.sortedItems.mkString("+")}")
       logger.info(f"$iteration%d;$i%d;${p.size}%d;${client.describe(p)}%s;${GetWeight(p)}%.6f;${learnedWeight(p)}%.6f;${p.sortedItems.mkString("+")}")
     }
-  
+  }
   protected final def getIterationOutcome(iteration: Int, query: Array[Itemset],
                                           learnedWeight: LogisticWeight): String = {
+    val GetWeight : Itemset => Double={_.getMetadata[Double]("wg4ps.weight").get}
     var results: String = ""
     query.view.zipWithIndex.foreach { case (p, i) =>
       //logger.info(f"$iteration%d;$i%d;${p.size}%d;${GetWeight(p)}%.6f;${learnedWeight(p)}%.6f;${p.sortedItems.mkString("+")}")
       results = results + f"$iteration%d;$i%d;${p.size}%d;${GetWeight(p)}%.6f;${learnedWeight(p)}%.6f;${p.sortedItems.mkString("+")}\n"
     }
+    //println("results:"+results)
     results
   }
   

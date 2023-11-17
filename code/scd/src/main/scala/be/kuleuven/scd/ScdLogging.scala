@@ -15,7 +15,7 @@ trait ScdLogging {
     logger.info(s"$m examples, $d features")
     logger.info(f"$loss, beta = ${loss.beta}%.4f")
     logger.info(f"$iterations%d iterations, lambda = $lambda%4.1e")
-    logger.debug(s"Initial state: $state")
+    //logger.debug(s"Initial state: $state")
   }
 
   protected final def logSampledFeatureIndex(t: Int, iterations: Int, j: Int, wj: Double): Unit =
@@ -29,7 +29,7 @@ trait ScdLogging {
     //logger.trace(f"Iteration $t/$iterations: comparing $oldWeight%.5f with [${(gj - lambda) / beta}%.5f; ${(gj + lambda) / beta}%.5f]")
     //logger.debug(f"Iteration $t/$iterations: loss derivative = $gj%.5f; update = $eta%.5f, new weight = $newWeight%.5f")
     logger.trace(f"Iteration $t/$d: comparing $oldWeight%.5f with [${(gj - lambda) / beta}%.5f; ${(gj + lambda) / beta}%.5f]")
-    logger.debug(f"Iteration $t/$d: loss derivative = $gj%.5f; update = $eta%.5f, new weight = $newWeight%.5f")
+    //logger.debug(f"Iteration $t/$d: loss derivative = $gj%.5f; update = $eta%.5f, new weight = $newWeight%.5f")
   }
 
   protected final def logStatistics(t: Int, iterations: Int,

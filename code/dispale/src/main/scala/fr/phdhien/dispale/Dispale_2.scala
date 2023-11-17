@@ -18,25 +18,25 @@ import scala.annotation.tailrec
 
 object Dispale_2 {
   def apply(
-            dataset: Dataset[Set[Int]], datasetPath: String, 
-            minsup: Int, jmax: Double, oracle: String, 
+            dataset: Dataset[Set[Int]], datasetPath: String, datasetPathFimi:String,directory:String,
+            run_id: Int, minsup: Int, jmax: Double, oracle: String, 
             params: Parameters, aggregation_function: String, 
             listFeatures: Array[Features], listFeatures_count: Array[Int], 
             listFeatures_str: Array[String], user: Ranker = FrequencyRanker, 
             seed: Long = System.nanoTime().hashCode()): Dispale_2 = {
-    new Dispale_2(dataset, datasetPath, minsup, jmax, oracle, params, aggregation_function, 
+    new Dispale_2(dataset, datasetPath,datasetPathFimi, directory, run_id, minsup, jmax, oracle, params, aggregation_function, 
                                     listFeatures, listFeatures_count, listFeatures_str, user, seed)
   }
 }
 
 class Dispale_2(
-            override val dataset: Dataset[Set[Int]], override val datasetPath: String, 
-            override val minsup: Int, override val jmax: Double, override val oracle: String, 
+            override val dataset: Dataset[Set[Int]], override val datasetPath: String, override val datasetPathFimi: String, override val directory:String,
+            override val run_id: Int, override val minsup: Int, override val jmax: Double, override val oracle: String, 
             override val params: Parameters, override val aggregation_function: String, 
             override val listFeatures: Array[Features], override val listFeatures_count: Array[Int], 
             override val listFeatures_str: Array[String], override val user: Ranker = FrequencyRanker, 
             override val seed: Long = System.nanoTime().hashCode()) extends 
-            Dispale(dataset, datasetPath, minsup, jmax, oracle, params, aggregation_function, 
+            Dispale(dataset, datasetPath,datasetPathFimi, directory, run_id, minsup, jmax, oracle, params, aggregation_function, 
                                     listFeatures, listFeatures_count, listFeatures_str, user, seed) {
   
   protected override val logger = Logger(LoggerFactory.getLogger("Dispale-2"))

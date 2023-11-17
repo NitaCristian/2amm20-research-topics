@@ -87,6 +87,15 @@ object ParseArgs {
     //val oracle: Option = new Option("o", "oracle", false, "the oracle used to mine patterns over iterations")
     //oracle.setRequired(true)
     all_options.addOption(oracle)
+    
+    val directory: Option= new Option("dir", "directory",true,"HAI Sampler parameters dir --> REQUIRED \n\n")
+    all_options.addOption(directory)
+    
+    val run_id: Option= new Option("run", "run",true,"the run id --> REQUIRED \n\n")
+    all_options.addOption(run_id)
+    
+    val weightsFile: Option= new Option("w", "weights", false, "the weights file \n\n")
+    all_options.addOption(weightsFile)
 
     val help: Option = new Option("h", "help", false, "help \n")
     //help.setRequired(true)

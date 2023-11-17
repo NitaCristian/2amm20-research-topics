@@ -22,27 +22,27 @@ import scala.math.exp
 
 object Dispale {
   def apply(
-            dataset: Dataset[Set[Int]], datasetPath: String, 
-            minsup: Int, jmax: Double, oracle: String, 
+            dataset: Dataset[Set[Int]], datasetPath: String, datasetPathFimi: String, directory:String,
+            run_id:Int, minsup: Int, jmax: Double, oracle: String, 
             params: Parameters, aggregation_function: String, 
             listFeatures: Array[Features], listFeatures_count: Array[Int], 
             listFeatures_str: Array[String], user: Ranker = FrequencyRanker, 
             seed: Long = System.nanoTime().hashCode()): Dispale = {
     
-    new Dispale(dataset, datasetPath, minsup, jmax, oracle, params, aggregation_function, 
+    new Dispale(dataset, datasetPath,datasetPathFimi, directory, run_id, minsup, jmax, oracle, params, aggregation_function, 
                                     listFeatures, listFeatures_count, listFeatures_str, user, seed)
   }
 }
 
 /**/
 class Dispale(
-            override val dataset: Dataset[Set[Int]], override val datasetPath: String, 
-            override val minsup: Int, override val jmax: Double, override val oracle: String, 
+            override val dataset: Dataset[Set[Int]], override val datasetPath: String, val datasetPathFimi: String, override val directory:String,
+            override val run_id: Int, override val minsup: Int, override val jmax: Double, override val oracle: String, 
             override val params: Parameters, val aggregation_function: String, 
             override val listFeatures: Array[Features], val listFeatures_count: Array[Int], 
             val listFeatures_str: Array[String], override val user: Ranker = FrequencyRanker, 
             override val seed: Long = System.nanoTime().hashCode()) extends 
-            LetSIP(dataset, datasetPath, minsup, jmax, oracle, params, listFeatures, user, seed) {
+            LetSIP(dataset, datasetPath, directory, run_id, minsup, jmax, oracle, params, listFeatures, user, seed) {
 /**/
 
   //************************************************************************************************************
@@ -54,7 +54,7 @@ class Dispale(
   var discriminatingFrequencies = HashMap[Set[Int], Double]()  // save discriminating pattern frequency weight
   //************************************************************************************************************
   // used to compute best ICV itemset
-  var icvObject : BestICVSubset = new BestICVSubset(params.querySize, datasetPath)
+  var icvObject : BestICVSubset = new BestICVSubset(params.querySize, datasetPathFimi)
   //************************************************************************************************************
   protected override val logger = Logger(LoggerFactory.getLogger("Dispale"))  
   

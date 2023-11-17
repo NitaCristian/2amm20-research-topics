@@ -23,7 +23,7 @@ package object scd {
 
   type Weights = MutableVector
 
-  final class ArrayVector(private val array: Array[Double], override val length: Int) extends MutableVector {
+  final class ArrayVector(val array: Array[Double], override val length: Int) extends MutableVector {
     def this(array: Array[Double]) = this(array, array.length)
 
     @inline override def apply(j: Int): Double = array(j)
@@ -39,6 +39,11 @@ package object scd {
 
   object ArrayVector {
     def zeros(length: Int) = new ArrayVector(Array.ofDim[Double](length), length)
+    def ones(length:Int)={
+    val arrayOnes=Array.ofDim[Double](length)
+    val i=0
+    for(i<-1 to length){arrayOnes(i-1)=1}
+    new ArrayVector(arrayOnes, length)}
   }
 
   def innerProduct(v1: Vector, v2: Vector, d: Option[Int] = None): Double = {

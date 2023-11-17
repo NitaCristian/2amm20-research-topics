@@ -7,6 +7,8 @@ import be.kuleuven.pmlib.labels.{Model, QualityMeasure}
 import be.kuleuven.scd._
 import be.kuleuven.weightgen.{Uniform, WeightFunction}
 
+// Importing break package
+import scala.util.control.Breaks
 import scala.util.Random
 
 trait Ranker {
@@ -53,6 +55,89 @@ object FrequencyRanker extends Ranker {
   override def toString: String = "FrequencyRanker"
 }
 
+//final class GaussianRanker(dataset: Dataset[Set[Int]],seed:Long) extends Ranker {
+final class GaussianRanker(
+                          dataset: Dataset[Set[Int]], 
+                          seed:Long = System.nanoTime().hashCode(),
+                          weightsFile: String = null) extends Ranker {
+  
+  
+  
+  
+  private val weights={
+    //
+    var w:Array[Double]=new Array[Double](dataset.attributes.size)
+    //
+    //if(weightsFile.isEmpty){
+    if(weightsFile == null){
+      //
+      // generate gaussian weights 
+      //
+      val rnd = new Random(seed)
+      for(i<-1 to dataset.attributes.size){
+        w(i-1) = rnd.nextGaussian()
+        println(w(i-1))
+      }
+      //
+    }
+    else{
+      //
+      // read gaussian weights from file 
+      //
+      var i = 0
+      val loop = new Breaks;
+      val bufferedSource = scala.io.Source.fromFile(weightsFile)
+      for (line <- bufferedSource.getLines()) {
+        val weight_str = line.replaceAll(" ", "").replaceAll("\n", "")
+        w(i) = weight_str.toDouble
+        i = i+1
+        if (i == dataset.attributes.size)
+          loop.break;
+      }
+      bufferedSource.close()
+    }
+    //
+    w
+  }
+  
+  def utility(itemset:Itemset):Double={
+      var v:Double=0
+      var i=0
+      for (i<-1 to dataset.attributes.size){
+          if (itemset.items(i-1)){
+              v=v+weights(i-1)}
+          }
+      v=v*itemset.size
+      v
+  }
+  
+  private val byUtility=Ordering.by(utility).reverse
+  
+  override def rank(query: Array[Itemset]): Unit =
+    scala.util.Sorting.quickSort(query)(byUtility)
+
+  override def rank(query: Array[Itemset], featureMap: FeatureMap): Unit =
+    scala.util.Sorting.quickSort(query)(byUtility)
+
+  override def describe(itemset: Itemset): String ={
+    //surprisingness(itemset).formatted("%.6f")
+    //println(s"${itemset.items} ${surprisingness(itemset)}")
+    f"${utility(itemset)}"
+    }
+
+  override def toString: String = "Gaussian"
+}
+      
+
+object GaussianRanker {
+//  def apply(dataset:Dataset[Set[Int]],seed:Long): GaussianRanker = {
+//    new GaussianRanker(dataset,seed)
+  def apply(dataset:Dataset[Set[Int]], seed:Long = System.nanoTime().hashCode(), weightsFile: String = null): GaussianRanker = {
+    new GaussianRanker(dataset, seed, weightsFile)
+  }
+}
+
+
 final class SurprisingnessRanker(dataset: Dataset[Set[Int]]) extends Ranker {
   private val invDatasetSize = 1.0 / dataset.size
   private val itemFrequencies = dataset.records.foldLeft(Array.ofDim[Double](dataset.attributes.size)) { case (f, t) =>
@@ -60,8 +145,11 @@ final class SurprisingnessRanker(dataset: Dataset[Set[Int]]) extends Ranker {
     f
   }
 
-  def surprisingness(itemset: Itemset): Double =
-    (itemset.size * invDatasetSize - itemset.items.view.map(itemFrequencies).product).max(0)
+  def surprisingness(itemset: Itemset): Double ={
+     val v= (itemset.size * invDatasetSize - itemset.items.view.map(itemFrequencies).product).max(0)
+     //println(s"${itemset.items} $v")
+     v
+  }
 
   private val bySurprisingness = Ordering.by(surprisingness).reverse
 
@@ -71,11 +159,13 @@ final class SurprisingnessRanker(dataset: Dataset[Set[Int]]) extends Ranker {
   override def rank(query: Array[Itemset], featureMap: FeatureMap): Unit =
     scala.util.Sorting.quickSort(query)(bySurprisingness)
 
-  override def describe(itemset: Itemset): String =
+  override def describe(itemset: Itemset): String ={
     //surprisingness(itemset).formatted("%.6f")
+    //println(s"${itemset.items} ${surprisingness(itemset)}")
     f"${surprisingness(itemset)}"
+    }
 
-  override def toString: String = "Suprisingness"
+  override def toString: String = "Surprisingness"
 }
 
 object SurprisingnessRanker {
@@ -83,5 +173,6 @@ object SurprisingnessRanker {
     new SurprisingnessRanker(dataset)
   }
 }
+
 
 
