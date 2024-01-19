@@ -234,7 +234,7 @@ def get_argParser():
                                     epilog="Copyrights: Normandie Université and IMT Atlantique (Contact: Arnold Hien or Samir Loudni)\n\n")
     #
     parser.add_argument("--version", action="version", version="DiSPaLe 2.0")
-    #InterPaM (Interactive Pattern Mining)
+    #
     parser.add_argument("-m", "--method", type=str, nargs=1, choices=all_methods_to_launch, required=True, help=f"the method to run: {all_methods_to_launch}")
     parser.add_argument("-d", "--data", type=str, nargs=1, required=True, help="the dataset name (check 'data' directory). The dataset file must respect CP4IM format (check `.txt' file in data directory)")
     parser.add_argument("-k", "--query", type=int, nargs=1, required=True, help="the query size, ie. #patterns mined at each iterations")
