@@ -40,23 +40,6 @@ To do this, navigate to the project's root directory and run the **build-code.py
 If everything went well, you will receive an exit status of 0.
 
 
-
-Execution is carried out using the **launch_LetSIP** python script in the _scripts/tests_ directory. This script allows you to set the various configurations and input data for the programme.
-It is also possible to run the program manually by using a java command and specifying the necessary arguments. To do this, simply run the following command:
-
-
-
-
-## 1- Compilation
-Avant d'effectuer une exécution, il faudra au préalable compiler le projet **dispale**.
-Pour cela, on pourra utiliser le script **compile.sh** situé à la racine du projet.
-Il est également possinle d'effectuer une compilation manuelle. Pour cela, il faut se placer à l'intérieur du dossier **code** et faire :
-
-```
-> gradle wrapper --gradle-version=4.9
-> ./gradlew build
-```
-
 ## 2- Execution
 The program has been implemented using Java, Scala, and Python. The executable files generated are JAR files.
 Executions can be carried out using the **[test-program.py](https://gitlab.com/phdhien/dispale/-/blob/main/scripts/test-program.py?ref_type=heads)** Python script.

@@ -231,7 +231,7 @@ def get_argParser():
                                     prog="DiSPaLe Launcher",
                                     #prog=f"{os.path.basename(sys.argv[0])}",
                                     description="Process dispale, letsip and lutom arguments and prepare running.",
-                                    epilog="Copyrights: Normandie Université and IMT Atlantique (Contact: Arnold Hien or Samir Loudni)")
+                                    epilog="Copyrights: Normandie Université and IMT Atlantique (Contact: Arnold Hien or Samir Loudni)\n\n")
     #
     parser.add_argument("--version", action="version", version="DiSPaLe 2.0")
     #InterPaM (Interactive Pattern Mining)
@@ -361,6 +361,7 @@ def get_arguments():
 #=====================================================================================
 #
 if __name__ == '__main__':
+    
     # set the root directory
     cwd = os.path.dirname(os.path.realpath(__file__)) # current directory
     root_dir = os.path.realpath(os.path.join(cwd, os.pardir)) # root directory
@@ -369,24 +370,28 @@ if __name__ == '__main__':
     #
     #-------------------------------------------------------------------
     #
-    (prg_arg, timeout) = get_arguments()
-    dependencies = get_dependencies()
-    #
-    #-------------------------------------------------------------------
-    #
-    command = f"java -classpath {dependencies} fr.phdhien.dispale.Main {prg_arg}"
-    if timeout is not None:
-        command = f"/usr/bin/timeout {timeout}s {command}"
-    #
-    proc = subprocess.run([command], shell=True, check=True)
-    #subprocess.run([command + "; echo \" \nExit status: $?\" "], shell=True, check=True)
-    #
-    if proc.returncode == 0:
-        print("\n\nExit status: 0")
-    #
-    #-------------------------------------------------------------------
-    #
-    print("\n***** FINISHED *****\n")
+    if not check_if_project_is_built(root_dir):
+        print("\nDispale 2.0\n\nThe project code is not yet built. Use script build-code.py to build. \n")
+    else:
+        (prg_arg, timeout) = get_arguments()
+        dependencies = get_dependencies()
+        #
+        #-------------------------------------------------------------------
+        #
+        command = f"java -classpath {dependencies} fr.phdhien.dispale.Main {prg_arg}"
+        if timeout is not None:
+            command = f"/usr/bin/timeout {timeout}s {command}"
+        #
+        proc = subprocess.run([command], shell=True, check=True)
+        #subprocess.run([command + "; echo \" \nExit status: $?\" "], shell=True, check=True)
+        #
+        if proc.returncode == 0:
+            print("\n\nExit status: 0")
+        #
+        #-------------------------------------------------------------------
+        #
+        print("\n***** FINISHED *****\n")
+        #
     
     #####################################################################
     #####################################################################
