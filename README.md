@@ -15,7 +15,7 @@ Results on [UCI](https://archive.ics.uci.edu/datasets) and [CP4IM](https://dtai.
 ## 1- Discriminating features
 Discriminating patterns are correlated with the user's ranking and can therefore be used to explain it.
 The figure below provides a schematic overview of how DiSPaLe operates.
-![The dispale framework](paper/dispale-new.eps "The dispale framework")
+![The dispale framework](./paper/dispale.png "The dispale framework")
 
 The paper's supplementary materials can be found in the ['paper'](https://gitlab.com/phdhien/dispale/-/tree/main/paper?ref_type=heads) directory.
 A tutorial and an illustrative example of discriminating features are also included.
