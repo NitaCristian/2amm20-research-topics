@@ -1,9 +1,23 @@
+/*
+ * This file is part of the DiSPaLe project (https://gitlab.com/phdhien/dispale)
+ *
+ * Copyright (c) 2023, Normandie Université and IMT Atlantique, France
+ *
+ * Licensed under the MIT license.
+ *
+ * See LICENSE file in the project root for full license information.
+ */
 package ca.pfv.spmf.algorithms.frequentpatterns.tko;
 
-import java.util.ArrayList;
 import java.util.List;
 import ca.pfv.spmf.algorithms.frequentpatterns.hui_miner_float.Element;
 
+/**
+ * A generic class of the implemented algorithms (TKO, TKUCE).
+ * 
+ * @author Maxime Garfagni
+ * @author Arnold Hien.
+ */
 public class FloatItemsetTKO implements Comparable<FloatItemsetTKO>{
 	int[] itemset; 
 	int item;

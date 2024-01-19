@@ -1,3 +1,12 @@
+/*
+ * This file is part of the DiSPaLe project (https://gitlab.com/phdhien/dispale)
+ *
+ * Copyright (c) 2022, Normandie Université, France
+ *
+ * Licensed under the MIT license.
+ *
+ * See LICENSE file in the project root for full license information.
+ */
 package fr.phdhien.dispale;
 
 import java.io.IOException;
@@ -9,6 +18,9 @@ import java.util.Set;
 import fr.phdhien.dispale.tools.DataSet;
 import fr.phdhien.dispale.tools.TItemSet;
 
+/**
+ * @author Arnold Hien
+ */
 public class BestICVSubset {
 	
 	public int currentPosition;

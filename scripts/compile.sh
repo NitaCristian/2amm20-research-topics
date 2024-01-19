@@ -4,13 +4,25 @@
 
 current_dir="`pwd`" 
 
-dispale_dir="$current_dir/code"
-echo $dispale_dir
+code_dir="$current_dir/code"
+#echo $code_dir
 
-cd "$dispale_dir"
+cd "$code_dir"
 
-exec "gradle" "wrapper" --gradle-version=7.4.2 #4.9
+#exec "gradle" "wrapper" --gradle-version=7.4.2 #4.9
 
-#exec "./gradlew" "clean"
-exec "./gradlew" "build"
+exec "./gradlew" "clean" &
+cleanProcessID=$!
+wait $cleanProcessID
 
+echo -e "\n\n*-------------------------------*"
+echo -e "|\tStart building\t\t|"
+echo -e "*-------------------------------*\n\n"
+
+exec "./gradlew" "build" &
+buildProcessID=$!
+wait $buildProcessID
+
+echo -e "\n\n*-------------------------------*"
+echo -e "|\tBuilding finish\t\t|"
+echo -e "*-------------------------------*\n\n"

@@ -1,51 +1,69 @@
+/*
+ * This file is part of letsip project (https://bitbucket.org/wxd/letsip/src/master/)
+ *
+ * Copyright (c) 2017, KU Leuven, Belgium
+ */
 package be.kuleuven.scd
 
 import java.lang.Math.{exp, log}
 
+/* 
+ * @author Vladimir Dzyuba
+ */
 trait LossFunction {
-  def loss(weightExampleInnerProduct: Double, target: Double): Double
+    def loss(weightExampleInnerProduct: Double, target: Double): Double
+    
+    def derivative(weightExampleInnerProduct: Double, target: Double): Double
+    
+    val beta: Double
 
-  def derivative(weightExampleInnerProduct: Double, target: Double): Double
+    final def loss(
+                        example: Example, 
+                        weights: Weights, 
+                        d: Option[Int] = None
+                    ): Double =
+        loss(innerProduct(weights, example, d), example.label)
 
-  val beta: Double
+    final def totalLoss(
+                            examples: Traversable[Example], 
+                            weights: Weights, d: Option[Int] = None
+                        ): Double = {
+        val d0 = Some(d.getOrElse(weights.length))
+        examples.view.map(loss(_, weights, d0)).sum
+    }
 
-  final def loss(example: Example, weights: Weights, d: Option[Int] = None): Double =
-    loss(innerProduct(weights, example, d), example.label)
-
-  final def totalLoss(examples: Traversable[Example], weights: Weights, d: Option[Int] = None): Double = {
-    val d0 = Some(d.getOrElse(weights.length))
-    examples.view.map(loss(_, weights, d0)).sum
-  }
-
-  final def regularizedLoss(examples: Traversable[Example],
-                            weights: Weights,
-                            lambda: Double,
-                            d: Option[Int] = None,
-                            m: Option[Int] = None): Double = {
-    val d0 = Some(d.getOrElse(weights.length))
-    totalLoss(examples, weights, d0) / m.getOrElse(examples.size) + lambda * l1Norm(weights, d0)
-  }
+    final def regularizedLoss(
+                                    examples: Traversable[Example],
+                                    weights: Weights,
+                                    lambda: Double,
+                                    d: Option[Int] = None,
+                                    m: Option[Int] = None
+                                ): Double = {
+        //
+        val d0 = Some(d.getOrElse(weights.length))
+        totalLoss(examples, weights, d0) / m.getOrElse(examples.size) + lambda * l1Norm(weights, d0)
+    }
 }
 
 object SquaredLoss extends LossFunction {
-  override def loss(a: Double, y: Double): Double = {
-    val l = a - y
-    0.5 * l * l
-  }
+    override def loss(a: Double, y: Double): Double = {
+        val l = a - y
+        0.5 * l * l
+    }
 
-  override def derivative(a: Double, y: Double): Double = a - y
+    override def derivative(a: Double, y: Double): Double = a - y
 
-  override val beta: Double = 1
+    override val beta: Double = 1
 
-  override def toString = "SquaredLoss"
+    override def toString = "SquaredLoss"
 }
 
 object LogisticLoss extends LossFunction {
-  override def loss(a: Double, y: Double): Double = log(1 + exp(-a * y))
+    override def loss(a: Double, y: Double): Double = log(1 + exp(-a * y))
 
-  override def derivative(a: Double, y: Double): Double = -y / (1 + exp(a * y))
+    override def derivative(a: Double, y: Double): Double = -y / (1 + exp(a * y))
 
-  override val beta: Double = 0.25
+    override val beta: Double = 0.25
 
-  override def toString = "LogisticLoss"
+    override def toString = "LogisticLoss"
 }

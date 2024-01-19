@@ -1,3 +1,12 @@
+/*
+ * This file is part of the DiSPaLe project (https://gitlab.com/phdhien/dispale)
+ *
+ * Copyright (c) 2022, Normandie Université, France
+ *
+ * Licensed under the MIT license.
+ *
+ * See LICENSE file in the project root for full license information.
+ */
 package fr.phdhien.dispale.tools;
 
 import java.io.BufferedReader;
@@ -13,6 +22,9 @@ import java.util.Set;
 import java.util.StringTokenizer;
 import java.util.stream.Collectors;
 
+/**
+ * @author Arnold Hien
+ */
 public class DataSet {
 	private BitSet[] VerticalDataBase;
 	private List<TItemSet> HorizontalBase;

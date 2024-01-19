@@ -1,3 +1,12 @@
+/*
+ * This file is part of the DiSPaLe project (https://gitlab.com/phdhien/dispale)
+ *
+ * Copyright (c) 2022, Normandie Université, France
+ *
+ * Licensed under the MIT license.
+ *
+ * See LICENSE file in the project root for full license information.
+ */
 package fr.phdhien.dispale
 
 //import be.kuleuven.flexics.GetWeight
@@ -9,6 +18,11 @@ import be.kuleuven.wg4ps
 
 import com.typesafe.scalalogging.Logger
 
+import fr.phdhien.dispale.mining.EFlexicsWrapper
+
+/* 
+ * @author Arnold Hien
+ */
 
 trait LearningLogging {
   protected val logger: Logger
@@ -28,7 +42,7 @@ trait LearningLogging {
     logger.info(s"${dataset.name}, ${dataset.size}x${dataset.attributes.size}, minsup=$minsup")
     logger.info(s"  Ranker = $client")
     logger.info(s"Features = ${params.featureMap}")
-    logger.info(s"  Params = iterations=${params.iterations}, k=${params.querySize}, l=${params.queryOverlap}")
+    logger.info(s"  Params = iterations=${params.iterations}, k=${params.querySize}, l=${params.queryRetention}")
     logger.info(f"     GLF = A=${params.a}%.3f")
     logger.info(f"     SCD = iterations=${params.scd.iterations}%s, lambda=${params.scd.lambda}%.2e")
     logger.info(s" Sampler = $sampler")
@@ -43,7 +57,7 @@ trait LearningLogging {
     println(s"${dataset.name}, ${dataset.size}x${dataset.attributes.size}, minsup=$minsup")
     println(s"  Ranker = $client")
     println(s"Features = ${params.featureMap}")
-    println(s"  Params = iterations=${params.iterations}, k=${params.querySize}, l=${params.queryOverlap}")
+    println(s"  Params = iterations=${params.iterations}, k=${params.querySize}, l=${params.queryRetention}")
     println(s"featureCount = $d")
   }
 
@@ -90,7 +104,7 @@ trait LearningLogging {
       pct_rank(i) = anaData.replace(',', '.').toDouble
     }}
     
-    anaData = f"##$iteration%d-"
+    anaData = f"\n##$iteration%d-"
     
     for(i <- 0 to (query.size-1)){
       if (i != (query.size-1))
@@ -128,7 +142,7 @@ trait LearningLogging {
     
     var avg_regret = 1-avg_rank
     var max_regret = 1-max_rank
-    println(f"$anaData\n")
+    println(f"$anaData\n\n")
   }
   
   protected final def getAnaData(iteration: Int, query: Array[Itemset], learnedWeight: LogisticWeight): String = {

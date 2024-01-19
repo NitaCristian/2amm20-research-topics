@@ -24,8 +24,8 @@ import java.util.List;
 /**
  * This class represents a UtilityList as used by the HUI-Miner algorithm.
  *
- * @see AlgoHUIMiner
- * @see Element
+ * @see ca.pfv.spmf.algorithms.frequentpatterns.tko.AlgoTKO
+ * @see ca.pfv.spmf.algorithms.frequentpatterns.hui_miner_float.Element
  * @author Philippe Fournier-Viger
  */
 public class UtilityList {

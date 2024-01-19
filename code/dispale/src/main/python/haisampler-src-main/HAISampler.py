@@ -1,4 +1,18 @@
-__author__ = ""
+'''
+This file is part of the DiSPaLe project (https://gitlab.com/phdhien/dispale)
+
+Copyright (c) 2023, IMT Atlantique and Normandie Université, France
+
+Licensed under the MIT license.
+
+ See LICENSE file in the project root for full license information.
+'''
+
+__author__ = "Maxime Garfagni"
+__copyright__ = "Copyright (C) 2023 IMT Atlantique and Normandie Université"
+__license__ = "MIT license"
+#__version__ = "1.0"
+
 
 import time
 import sys

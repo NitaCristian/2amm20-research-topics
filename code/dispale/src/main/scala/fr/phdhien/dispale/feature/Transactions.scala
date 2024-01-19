@@ -1,20 +1,32 @@
+/*
+ * This file is part of the DiSPaLe project (https://gitlab.com/phdhien/dispale)
+ *
+ * Copyright (c) 2022, Normandie Université, France
+ *
+ * Licensed under the MIT license.
+ *
+ * See LICENSE file in the project root for full license information.
+ */
 package fr.phdhien.dispale.feature
 
 import be.kuleuven.pmlib.data.Dataset
 import be.kuleuven.pmlib.itemsets.Itemset
 
+/* 
+ * @author Arnold Hien
+ */
 object Transactions extends FeatureMapGenerator {
-  override def toFeatureMap(dataset: Dataset[Set[Int]]) = new TransactionFeatures(dataset)
+    override def toFeatureMap(dataset: Dataset[Set[Int]]) = new TransactionFeatures(dataset)
 
-  override def toString = "Transactions"
+    override def toString = "Transactions"
 }
 
 final class TransactionFeatures(dataset: Dataset[Set[Int]]) extends FeatureMap {
-  override val featureCount: Int = dataset.size
-  override val featureLabels: IndexedSeq[String] = (0 until featureCount).map(ti => s"T$ti")
+    override val featureCount: Int = dataset.size
+    override val featureLabels: IndexedSeq[String] = (0 until featureCount).map(ti => s"T$ti")
 
-  override protected[feature] def storeFeaturesIn(itemset: Itemset, array: Array[Double], startIndex: Int) =
-    (0 until featureCount).foreach { t => array(startIndex + t) = if (itemset.mask.isCovering(t)) 1 else 0 }
+    override protected[feature] def storeFeaturesIn(itemset: Itemset, array: Array[Double], startIndex: Int) =
+        (0 until featureCount).foreach { t => array(startIndex + t) = if (itemset.mask.isCovering(t)) 1 else 0 }
 
-  override def toString: String = s"Transactions($featureCount)"
+    override def toString: String = s"Transactions($featureCount)"
 }

@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+    <appender name="CONS" class="ch.qos.logback.core.ConsoleAppender">
+        
+        <encoder>
+            <pattern>%d{HH:mm:ss.SSS} [%thread] %-5level %-5logger - %msg%n</pattern> <!-- -->
+        </encoder>
+        
+    </appender>
+    
+    <logger name="EclatXOR"             level="ERROR"/>
+    <logger name="EclatWeightMC"        level="ERROR"/>
+    <logger name="EclatWeightGen"       level="ERROR"/>
+    <logger name="ParitySystem"         level="ERROR"/>
+    <logger name="EFlexics"             level="INFO"/>
+
+    <root level="DEBUG">
+        <appender-ref ref="CONS"/>
+    </root>
+    
+</configuration>

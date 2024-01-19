@@ -1,3 +1,24 @@
+/*
+ *  Copyright (c) 2021 Wei Song, Lu Liu, and Chaomin Huang
+ * 
+ * This file is part of the SPMF DATA MINING SOFTWARE
+ * (http://www.philippe-fournier-viger.com/spmf).
+ * 
+ * It has been updated by Maxime Garfagni to be compatible with float utilities for our pattern mining purpose.
+ *
+ * SPMF is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * SPMF is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with SPMF.  If not, see <http://www.gnu.org/licenses/>.
+ */
 package ca.pfv.spmf.algorithms.frequentpatterns.tko;
 
 import java.io.BufferedReader;
@@ -18,6 +39,8 @@ import java.util.Map;
 import java.util.PriorityQueue;
 import java.util.Set;
 
+import ca.pfv.spmf.algorithms.frequentpatterns.AlgoHUI;
+import ca.pfv.spmf.algorithms.frequentpatterns.Pair;
 import ca.pfv.spmf.algorithms.frequentpatterns.hui_miner_float.Element;
 import ca.pfv.spmf.algorithms.frequentpatterns.hui_miner_float.UtilityList;
 import ca.pfv.spmf.tools.MemoryLogger;
@@ -27,69 +50,67 @@ import ca.pfv.spmf.tools.MemoryLogger;
  * optimizations described in the paper.
  * 
  * @author Philippe Fournier-Viger et al.
+ * @author Maxime Garfagni
+ * @author Arnold Hien
  */
-public class AlgoTKO_Dispale_IT {
+public class AlgoTKO extends AlgoHUI { 
+
 	/** the time the algorithm terminated */
-	long totalTime = 0; 
+	protected long totalTime = 0; 
 	
 	/** the number of HUI generated  */
-	int huiCount = 0; 
+	protected int huiCount = 0; 
 
 	/** the k parameter */
-	int k = 0;
+	protected int k = 0;
 	
 	/** the internal min utility variable */
-	double minutility = 0; 
+	protected double minutility = 0; 
 
 	/** the top k rules found until now */
-	PriorityQueue<FloatItemsetTKO> kItemsets; 
+	protected PriorityQueue<FloatItemsetTKO> kItemsets; 
 	
-	ArrayList<Set<Integer>> covers;
+	protected ArrayList<Set<Integer>> covers;
 
 	/** We create a map to store the TWU of each item */
-	final Map<Integer, Double> mapItemToTWU = new HashMap<Integer, Double>();
-
-	/** this class represent an item and its utility in a transaction */
-	class Pair {
-		/** an item */
-		int item = 0;
-		
-		/** the utility of the item */
-		double utility = 0;
-	}
+	protected final Map<Integer, Double> mapItemToTWU = new HashMap<Integer, Double>();
 
 	/** 
 	 * Constructor
 	 */
-	public AlgoTKO_Dispale_IT() {
+	public AlgoTKO() {
 
 	}
 
 	/**
 	 * Run the algorithm
-	 * @param input the input file path
-	 * @param output the output file path
-	 * @param k the parameter k
+	 * @param input: the input file path
+	 * @param k: the parameter k
+	 * @param weighs: array containing the utilities weights to be used
+	 * @param nb_items: the number of items of the dataset file
+	 * @param transUsed: check if transactions utilities are used or not
 	 * @throws IOException if an error occur for reading/writing to file.
 	 */
-	public List<Set<Integer>> runAlgorithm(String input, int k, double[] weights, int nb_items)
+	@Override
+	public List<Set<Integer>> runAlgorithm(String input, int k, double[] weights, int nb_items, boolean transUsed)
 			throws IOException {
-		System.out.println("NOMBRE ITEMS:"+nb_items);
-		double[] newWeights=new double[weights.length];
-		//URL url = MainTestTKOBasic.class.getResource(path);
-		//System.out.println("url:"+url);
-		//String input = java.net.URLDecoder.decode(url.getPath(),"UTF-8");
-		//System.out.println("input:"+input);
-		double minWeight=weights[0];
-		for (int i=1; i<weights.length;i++) {
-			double x=weights[i];
+		
+        assert ((input != null) || (input != "")) : "the input file path can not be null";
+        assert weights != null : "the utilities array can not be null";
+        
+		double[] newWeights = new double[weights.length];
+		double minWeight = weights[0];
+
+		for (int i = 1; i < weights.length; i++) {
+			double x = weights[i];
+
 			if (x<minWeight) {
-				minWeight=x;
+				minWeight = x;
 			}
 		}
 		if (minWeight<0) {
-			for (int i=1; i<weights.length;i++) {
-				newWeights[i]=weights[i]-minWeight;
+			for (int i = 1; i < weights.length; i++) {
+				newWeights[i] = weights[i] - minWeight;
 			}
 		}
 		else {
@@ -109,36 +130,43 @@ public class AlgoTKO_Dispale_IT {
 		try {
 			FileInputStream fin = new FileInputStream(new File(input));
 			myInput = new BufferedReader(new InputStreamReader(fin));
+
 			// for each line (transaction)
 			int transactionNb=0;
+
 			while ((thisLine = myInput.readLine()) != null) {
-				// if the line is  a comment, is  empty or is a
-				// kind of metadata			System.out.println(kItemsets.size());
+
+				// if the line is  a comment, is  empty or is a kind of metadata
 				if (thisLine.isEmpty() == true ||	thisLine.charAt(0) == '#' 
 						|| thisLine.charAt(0) == '%'
-					|| thisLine.charAt(0) == '@') {
+						|| thisLine.charAt(0) == '@') {
 					continue;
 				}
+
 				//items + useless element
-				String[] items = thisLine.split(" ");
-				//System.out.println(items);
+				String[] items = thisLine.split(" "); 
+
 				// the transaction utility
 				double transactionUtility = 0;
 				for (int i=0;i<items.length-1;i++) {
 					int item=Integer.parseInt(items[i]);
 					transactionUtility+=newWeights[item];
 				}
-				transactionUtility=transactionUtility*newWeights[nb_items+transactionNb];
-				transactionNb+=1;
-				
+
+                if(transUsed){
+                    transactionUtility = transactionUtility * newWeights[nb_items+transactionNb];
+                    transactionNb += 1;
+                }
+
 				// for each item, we add the transaction utility to its TWU
 				for (int i = 0; i < items.length-1; i++) {
 					Integer item = Integer.parseInt(items[i]);
+
 					// get the current TWU
 					Double twu = mapItemToTWU.get(item);
+
 					// update the twu
-					twu = (twu == null) ? transactionUtility : twu
-							+ transactionUtility;
+					twu = (twu == null) ? transactionUtility : twu + transactionUtility;
 					mapItemToTWU.put(item, twu);
 				}
 			}
@@ -154,8 +182,8 @@ public class AlgoTKO_Dispale_IT {
 		List<UtilityList> listItems = new ArrayList<UtilityList>();
 
 		// CREATE A MAP TO STORE THE UTILITY LIST FOR EACH ITEM.
-		Map<Integer, UtilityList> mapItemToUtilityList = new HashMap<Integer, UtilityList>(
-				10000);
+		Map<Integer, UtilityList> mapItemToUtilityList = new HashMap<Integer, UtilityList>(10000);
+		
 		// For each item
 		for (Integer item : mapItemToTWU.keySet()) {
 			UtilityList uList = new UtilityList(item);
@@ -164,14 +192,14 @@ public class AlgoTKO_Dispale_IT {
 			// create an empty Utility List that we will fill later.
 			mapItemToUtilityList.put(item, uList);
 		}
+
 		// SORT THE LIST OF HIGH TWU ITEMS IN ASCENDING ORDER
 		Collections.sort(listItems, new Comparator<UtilityList>() {
 			public int compare(UtilityList o1, UtilityList o2) {
 				double compare = mapItemToTWU.get(o1.item)
 						- mapItemToTWU.get(o2.item);
 				if (compare == 0) {
-					// return (ascendingOrder) ? o1.item - o2.item: o2.item -
-					// o1.item;
+					// return (ascendingOrder) ? o1.item - o2.item: o2.item - o1.item;
 					return (o1.item - o2.item);
 				}
 				else if (compare<0) {
@@ -182,22 +210,21 @@ public class AlgoTKO_Dispale_IT {
 				}
 			}
 		});
+
 		// SECOND DATABASE PASS TO CONSTRUCT THE UTILITY LISTS
 		// OF 1-ITEMSETS HAVING TWU >= minutil (promising items)
 		try {
-			myInput = new BufferedReader(new InputStreamReader(
-					new FileInputStream(new File(input))));
+			myInput = new BufferedReader(new InputStreamReader(new FileInputStream(new File(input))));
 			int tid = 0;
 			// for each line (transaction)
 			while ((thisLine = myInput.readLine()) != null) {
-				// if the line is  a comment, is  empty or is a
-				// kind of metadata
+				
+				// if the line is  a comment, is  empty or is a kind of metadata
 				if (thisLine.isEmpty() == true ||	thisLine.charAt(0) == '#' 
 						|| thisLine.charAt(0) == '%'
-					|| thisLine.charAt(0) == '@') {
+						|| thisLine.charAt(0) == '@') {
 					continue;
 				}
-				
 				
 				//items + useless element
 				String[] items = thisLine.split(" ");
@@ -206,12 +233,20 @@ public class AlgoTKO_Dispale_IT {
 
 				// Create a list to store items
 				List<Pair> revisedTransaction = new ArrayList<Pair>();
+
 				// for each item
 				for (int i = 0; i < items.length-1; i++) {
-					// / convert values to integers
+
+					// convert values to integers
 					Pair pair = new Pair();
 					pair.item = Integer.parseInt(items[i]);
-					pair.utility = newWeights[Integer.parseInt(items[i])]*newWeights[nb_items+tid];
+
+                    if(transUsed){
+                        pair.utility = newWeights[Integer.parseInt(items[i])]*newWeights[nb_items+tid];
+                    }else{
+					    pair.utility = newWeights[Integer.parseInt(items[i])]; // @TODO
+                    }
+
 					revisedTransaction.add(pair);
 					remainingUtility += pair.utility;
 				}
@@ -225,18 +260,15 @@ public class AlgoTKO_Dispale_IT {
 				// for each item left in the transaction
 				for (Pair pair : revisedTransaction) {
 
-					// subtract the utility of this item from the remaining
-					// utility
+					// subtract the utility of this item from the remaining utility
 					remainingUtility = remainingUtility - pair.utility;
 
 					// get the utility list of this item
-					UtilityList utilityListOfItem = mapItemToUtilityList
-							.get(pair.item);
+					UtilityList utilityListOfItem = mapItemToUtilityList.get(pair.item);
 
 					// Add a new Element to the utility list of this item
 					// corresponding to this transaction
-					Element element = new Element(tid, pair.utility,
-							remainingUtility);
+					Element element = new Element(tid, pair.utility, remainingUtility);
 
 					utilityListOfItem.addElement(element);
 				}
@@ -249,28 +281,26 @@ public class AlgoTKO_Dispale_IT {
 				myInput.close();
 			}
 		}
-		
-//		System.out.println(minutility);
 
 		// check the memory usage
 		MemoryLogger.getInstance().checkMemory();
 
 		// Mine the database recursively
 		search(new int[0], null, listItems);
-		//System.out.println("TOP K: "+kItemsets);
+
 		// check the memory usage again and close the file.
 		MemoryLogger.getInstance().checkMemory();
 		totalTime = (System.currentTimeMillis() - startTimestamp) / 1000;
 		
 		// build matrix
-		this.writeResultTofile("outputDispale.txt");
-		List<Set<Integer>> topK=new ArrayList<Set<Integer>>();
-		this.covers=new ArrayList<Set<Integer>>();
-		while(! kItemsets.isEmpty()) {
+		List<Set<Integer>> topK = new ArrayList<Set<Integer>>();
+		this.covers = new ArrayList<Set<Integer>>();
+		while( !kItemsets.isEmpty() ) {
+
 			FloatItemsetTKO FloatItemset=kItemsets.poll();
-			//System.out.println(FloatItemset+" "+FloatItemset.utility);
 			int[] itemset=FloatItemset.getWholeItemset();
 			Set<Integer> SetOfItems=new HashSet<Integer>();
+
 			for (int l=0;l<itemset.length;l++) {
 				SetOfItems.add(Integer.valueOf(itemset[l]));
 			}
@@ -278,6 +308,7 @@ public class AlgoTKO_Dispale_IT {
 			
 			List<Element> cover=FloatItemset.cover;
 			Set<Integer> coverset=new HashSet<Integer>();
+
 			for (int j=0;j<cover.size();j++) {
 				coverset.add(cover.get(j).tid);
 			}
@@ -285,98 +316,96 @@ public class AlgoTKO_Dispale_IT {
 		}
 		return topK;
 	}
+
 	/**
-	 * This is the recursive method to find all high utility itemsets. It writes
-	 * the itemsets to the output file.
-	 * ArrayList<Integer>[]
-	 * @param prefix
-	 *            This is the current prefix. Initially, it is empty.
-	 * @param pUL
-	 *            This is the Utility List of the prefix. Initially, it is
-	 *            empty.
-	 * @param ULs
-	 *            The utility lists corresponding to each extension of the
-	 *            prefix.
-	 * @param minUtility
-	 *            The minUtility threshold.
+	 * This is the recursive method to find all high utility itemsets. 
+	 * It save the itemsets to the output list.
+	 * @param prefix: This is the current prefix. Initially, it is empty.
+	 * @param pUL: This is the Utility List of the prefix. Initially, it is empty.
+	 * @param ULs: The utility lists corresponding to each extension of the prefix.
 	 * @throws IOException
 	 */
-	private void search(int[] prefix, UtilityList pUL, List<UtilityList> ULs)
-			throws IOException {
+	private void search(int[] prefix, UtilityList pUL, List<UtilityList> ULs) throws IOException {
 		MemoryLogger.getInstance().checkMemory();
+
 		// For each extension X of prefix P
 		for (int i = 0; i < ULs.size(); i++) {
 			UtilityList X = ULs.get(i);
 
-			// If pX is a high utility itemset.
-			// we save the itemset: pX
+			// If pX is a high utility itemset, we save the itemset: pX
 			if (X.sumIutils >= minutility) {
-				writeOut(prefix, X.item, X.sumIutils,X.elements);
-				
+				saveHUI(prefix, X.item, X.sumIutils, X.elements);	
 			}
 
-			// If the sum of the remaining utilities for pX
-			// is higher than minUtility, we explore extensions of pX.
-			// (this is the pruning condition)
+			// If the sum of the remaining utilities for pX is higher than minUtility, 
+			// we explore extensions of pX (this is the pruning condition)
 			if (X.sumRutils + X.sumIutils >= minutility) {
+
 				// This list will contain the utility lists of pX extensions.
 				List<UtilityList> exULs = new ArrayList<UtilityList>();
-				// For each extension of p appearing
-				// after X according to the ascending order
+
+				// For each extension of p appearing after X according to the ascending order
 				for (int j = i + 1; j < ULs.size(); j++) {
 					UtilityList Y = ULs.get(j);
-					// we construct the extension pXY
-					// and add it to the list of extensions of pX
+
+					// we construct the extension pXY and add it to the list of extensions of pX
 					exULs.add(construct(pUL, X, Y));
 				}
+
 				// We create new prefix pX
 				int[] newPrefix = new int[prefix.length + 1];
 				System.arraycopy(prefix, 0, newPrefix, 0, prefix.length);
 				newPrefix[prefix.length] = X.item;
 
-				// We make a recursive call to discover all itemsets with the
-				// prefix pX
+				// We make a recursive call to discover all itemsets with the prefix pX
 				search(newPrefix, X, exULs);
 			}
 		}
 	}
 
 	/**
-	 * Method to write a high utility itemset to the output file.
-	 * @param a prefix itemset
-	 * @param an item to be appended to the prefix
-	 * @param utility the utility of the prefix concatenated with the item
+	 * Save a high utility itemset to the output list.
+	 * @param prefix: a prefix itemset
+	 * @param item: an item to be appended to the prefix
+	 * @param utility: the utility of the prefix concatenated with the item
+	 * @param cover: the cover of the itemset
 	 */
-	private void writeOut(int[] prefix, int item, double utility, List<Element> cover) {
+	private void saveHUI(int[] prefix, int item, double utility, List<Element> cover) {
 		FloatItemsetTKO itemset = new FloatItemsetTKO(prefix, item, utility,cover);
 		kItemsets.add(itemset);
+
 		if (kItemsets.size() > k) {
 			FloatItemsetTKO lower;
 			do {
 				lower = kItemsets.peek();
 				if (lower == null) {
-					break; // / IMPORTANT
+					break; //IMPORTANT
 				}
 				kItemsets.remove(lower);
 			} while (kItemsets.size() > k);
+
 			this.minutility = kItemsets.peek().utility;
 		}
 	}
 
 	/**
 	 * This method constructs the utility list of pXY
-	 * @param P :  the utility list of prefix P.
-	 * @param px : the utility list of pX
-	 * @param py : the utility list of pY
+	 * @param P:  the utility list of prefix P.
+	 * @param px: the utility list of pX
+	 * @param py: the utility list of pY
 	 * @return the utility list of pXY
 	 */
 	private UtilityList construct(UtilityList P, UtilityList px, UtilityList py) {
+
 		// create an empy utility list for pXY
 		UtilityList pxyUL = new UtilityList(py.item);
+
 		// for each element in the utility list of pX
 		for(Element ex : px.elements){
+
 			// do a binary search to find element ey in py with tid = ex.tid
 			Element ey = findElementWithTID(py, ex.tid);
+
 			if(ey == null){
 				continue;
 			}
@@ -384,6 +413,7 @@ public class AlgoTKO_Dispale_IT {
 			if(P == null){
 				// Create the new element
 				Element eXY = new Element(ex.tid, ex.iutils + ey.iutils, ey.rutils);
+
 				// add the new element to the utility list of pXY
 				pxyUL.addElement(eXY);
 				
@@ -392,12 +422,12 @@ public class AlgoTKO_Dispale_IT {
 				Element e = findElementWithTID(P, ex.tid);
 				if(e != null){
 					// Create new element
-					Element eXY = new Element(ex.tid, ex.iutils + ey.iutils - e.iutils,
-								ey.rutils);
+					Element eXY = new Element(ex.tid, ex.iutils + ey.iutils - e.iutils, ey.rutils);
+
 					// add the new element to the utility list of pXY
 					pxyUL.addElement(eXY);
 				}
-			}	
+			}
 		}
 		// return the utility list of pXY.
 		return pxyUL;
@@ -405,8 +435,8 @@ public class AlgoTKO_Dispale_IT {
 	
 	/**
 	 * Do a binary search to find the element with a given tid in a utility list
-	 * @param ulist the utility list
-	 * @param tid  the tid
+	 * @param ulist: the utility list
+	 * @param tid:  the tid
 	 * @return  the element or null if none has the tid.
 	 */
 	private Element findElementWithTID(UtilityList ulist, int tid){
@@ -436,7 +466,7 @@ public class AlgoTKO_Dispale_IT {
 
 	/**
 	 * Write the result to a file
-	 * @param path the output file path
+	 * @param path: the output file path
 	 * @throws IOException if an exception for reading/writing to file
 	 */
 	public void writeResultTofile(String path) throws IOException {
@@ -470,11 +500,10 @@ public class AlgoTKO_Dispale_IT {
 	private int compareItems(int item1, int item2) {
 		double compare = mapItemToTWU.get(item1)- mapItemToTWU.get(item2);
 		if (compare == 0) {
-			// return (ascendingOrder) ? o1.item - o2.item: o2.item -
-			// o1.item;
+			// return (ascendingOrder) ? o1.item - o2.item: o2.item - o1.item;
 			return (item1 - item2);
 		}
-		else if (compare<0) {
+		else if (compare < 0) {
 			return -1;
 		}
 		else {
@@ -497,7 +526,18 @@ public class AlgoTKO_Dispale_IT {
 		System.out.println("===================================================");
 	}
 	
-	public ArrayList<Set<Integer>> getCovers() {
+    /*
+     * Get the cover of all itemsets
+     */
+	public ArrayList<Set<Integer>> get_all_itemsets_cover() {
 		return this.covers;
 	}
+	
+    /*
+     * Get the cover of one itemset
+     */
+	public Set<Integer> get_one_itemset_cover(int i) {
+		return this.covers.get(i);
+	}
+	
 }

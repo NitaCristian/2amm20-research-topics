@@ -21,8 +21,8 @@ package ca.pfv.spmf.algorithms.frequentpatterns.hui_miner_float;
 /**
  * This class represents an Element of a utility list as used by the HUI-Miner algorithm.
  * 
- * @see AlgoHUIMiner
- * @see UtilityList
+ * @see ca.pfv.spmf.algorithms.frequentpatterns.tko.AlgoTKO
+ * @see ca.pfv.spmf.algorithms.frequentpatterns.hui_miner_float.UtilityList
  * @author Philippe Fournier-Viger
  */
 public class Element {
