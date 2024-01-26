@@ -1,5 +1,4 @@
 
-
 # Discriminating Sub-Pattern features Learning (DiSPaLe) from user preferences
 
 This repository contains the implementation of DiSPaLe, our interactive mining approach 
@@ -65,7 +64,7 @@ queries size equal to 10, *Flexics* sampler as the oracle, the *Eflexics* algori
 > python3 scripts/test-program.py -m 'letsip' -d 'german-credit' -f 0.25 -k 10 -o 'flexics' -a 'eflexics' -F 'Items-Transactions-Length' -l 1 -i 25 -to 600
 ```
 
-We recently propose at [EGC-2024](https://iutdijon.u-bourgogne.fr/egc2024/programme/) a method for interactive mining of High Utility Itemsets (HUI). This method is denoted **LUTOM**.
+We recently propose at [EGC-2024](https://editions-rnti.fr/?inprocid=1002929) a method for interactive mining of High Utility Itemsets (HUI). This method is denoted **LUTOM**.
 
 Launch lutom on *mushroom* dataset setting queries size equal to 3, 
 *huiminer* as the oracle, the [*tkuce*](https://link.springer.com/chapter/10.1007/978-3-030-55789-8_72) algorithm, 
