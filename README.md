@@ -21,22 +21,33 @@ A tutorial and an illustrative example of discriminating features are also inclu
 
 
 
-## 2- Building the project
+## 2- Compiling the project
 Before executing, you must first compile the project.
 
 To do this, navigate to the project's root directory and run the **build-code.py** Python script.
 
-**Build the project using the *build* parameter**
+**Check the parameters to be used with _build-code.py_**
 ```
-> python build-code.py build
+python build-code.py -h
 ```
 
-**Clean the previously built project using the *clean* parameter**
+**Compile the project and generate the _.jar_ files required for the execution**
 ```
-> python build-code.py clean
+python build-code.py -b
+```
+If previously created _.jar_ files existed, the compilation command may fail.
+In this case, you must force the project to compile using: 
+```
+python build-code.py -fb
+```
+
+**Clean the previously built project using the _clean_ parameter**
+```
+> python build-code.py -c
 ```
 
 If everything went well, you will receive an exit status of 0.
+Otherwise, you must check the log file in the _results_ directory.
 
 
 ## 2- Execution
@@ -50,18 +61,30 @@ For help with the parameters:
 > python scripts/test-program.py -h
 ```
 
-Launch DiSPaLe on *chess* dataset with a frequency threshold of 0.5 (50% of the transactions in the dataset),
-queries size equal to 5, *Flexics* sampler as the oracle, the *Eflexics* algorithm, *Items* as features, 
-0 as the quey retention value and 10 iterations loops:
+Launch **DiSPaLe** using the following parameters: 
+* _chess_ dataset with a frequency threshold of 0.5 (50% of the transactions in the dataset),
+* queries size equal to 5
+* 10 iterations loops
+* _Flexics_ sampler as the oracle, _Eflexics_ as the oracle algorithm 
+* _Items_ as features 
+* [rankSVM](https://www.cs.cornell.edu/people/tj/svm_light/svm_rank.html) to update the features weights during user preferences learning
+* 0 as the quey retention value
+* a timeout of 10 secondes
 ```
-> python3 scripts/test-program.py -m 'dispale' -d 'chess' -f 0.5 -k 5 -o 'flexics' -a 'eflexics' -F 'Items' -l 0 -i 10 -to 100
+python scripts/test-program.py -m dispale -d chess -f 0.5 -k 5 -i 10 -o flexics -a eflexics -F Items -l 0 -to 100
 ```
 
-Launch [letsip](https://bitbucket.org/wxd/letsip/src/master/) on *german-credit* dataset with a frequency threshold of 0.25,
-queries size equal to 10, *Flexics* sampler as the oracle, the *Eflexics* algorithm, *Items-Transactions-Length* as features, 
-1 as the quey retention value and 25 iterations loops:
+Launch [letsip](https://bitbucket.org/wxd/letsip/src/master/) using the following parameters: 
+* _german-credit_ dataset with a frequency threshold of 0.25 (25% of the transactions in the dataset),
+* queries size equal to 10
+* 25 iterations loops
+* _Flexics_ sampler as the oracle, _Eflexics_ as the oracle algorithm 
+* a combination of _Items_, _Transactions_ and _Length_ as features 
+* _SCD (Stochastic Coordinate Descent)_ to update the features weights during user preferences learning
+* 1 as the quey retention value
+* a timeout of 10 minutes
 ```
-> python3 scripts/test-program.py -m 'letsip' -d 'german-credit' -f 0.25 -k 10 -o 'flexics' -a 'eflexics' -F 'Items-Transactions-Length' -l 1 -i 25 -to 600
+> python3 scripts/test-program.py -m 'letsip' -d german-credit -f 0.25 -k 10 -o flexics -a eflexics -F Items-Transactions-Length -l 1 -i 25 -to 600
 ```
 
 We recently propose at [EGC-2024](https://editions-rnti.fr/?inprocid=1002929) a method for interactive mining of High Utility Itemsets (HUI). This method is denoted **LUTOM**.

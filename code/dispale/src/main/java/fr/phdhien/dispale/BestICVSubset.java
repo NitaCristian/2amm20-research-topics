@@ -149,7 +149,7 @@ public class BestICVSubset {
 		System.out.println("~~~~~~~~~\n");
 		*/
 		
-		int iter_i = 0;
+		//int iter_i = 0;
 		while(!subItemsets.isEmpty()) {
 			Set<BitSet> nextSubItemsets = new HashSet<BitSet>();
 			//System.out.println("i = " + iter_i);
@@ -247,6 +247,7 @@ public class BestICVSubset {
 		return sol;
 	}
 	
+	@SuppressWarnings("unchecked")
 	public Set<Integer> getBestSolutionCover() {
 		HashSet<Integer> currentCover = new HashSet<Integer>();
 		

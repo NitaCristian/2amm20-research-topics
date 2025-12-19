@@ -1,7 +1,7 @@
 /*
  * This file is part of the DiSPaLe project (https://gitlab.com/phdhien/dispale)
  *
- * Copyright (c) 2022, Normandie Université, France
+ * Copyright (c) 2024, Normandie Université & Université de Caen-Normandie & IMT Atlantique, France
  *
  * Licensed under the MIT license.
  *
@@ -22,6 +22,10 @@ import com.typesafe.scalalogging.Logger
 import fr.phdhien.dispale.feature.{Features, FeatureMap, FeatureMapGenerator, Patterns}
 import fr.phdhien.dispale.mining.{Miner, FlexicsSampler_Oracle, HUI_Oracle}
 
+import java.nio.file.{Files, Paths}
+import java.time.LocalDateTime
+import java.time.format.DateTimeFormatter
+
 import org.slf4j.LoggerFactory
 
 import scala.annotation.tailrec
@@ -41,10 +45,11 @@ object LetSIP {
                 minsup: Int = 10,
                 oracle: String = "flexics", 
                 algo: String = "eflexics",
+                learner: String = "scd",
                 user: Ranker = FrequencyRanker,
                 seed: Long = System.nanoTime().hashCode()
             ): LetSIP = {
-        new LetSIP(method, dataset, datasetPath, params, listFeatures, minsup, oracle, algo, user, seed)
+        new LetSIP(method, dataset, datasetPath, params, listFeatures, minsup, oracle, algo, learner, user, seed)
     }
 }
 class LetSIP(
@@ -56,14 +61,20 @@ class LetSIP(
                 val minsup: Int = 10,
                 val oracle: String = "flexics", 
                 val algo: String = "eflexics",
+                val learner: String = "scd",
                 val user: Ranker = FrequencyRanker,
                 val seed: Long = System.nanoTime().hashCode()
             ) extends LearningLogging {
 
     //
-    println(s"USER:$user \n")
+    println(s"USER:$user ")
+    println("\n~~~~~~~~~~~~~~~~~~~~~~\n")
+    //
     //************************************************************************************************************
     val rnd = new Random(seed)
+    //************************************************************************************************************
+    val datafile = datasetPath.split("/").takeRight(1).toList(0)
+    val dataname = datafile.replace(".fimi", "")
     //************************************************************************************************************
     var featureMap = get_featureMap(dataset, params)
     val pattern_miner: Miner = get_miner(dataset, datasetPath, minsup, oracle, algo)
@@ -72,6 +83,9 @@ class LetSIP(
     val querySize: Int = params.querySize
     var nb_features = featureMap.featureCount
     var queryRetention = 0 // number of patterns retained from previous iteration
+    //************************************************************************************************************
+    val k: Int = params.querySize
+    var d: Int = featureMap.featureCount
     //************************************************************************************************************
     val loss = LogisticLoss
     var all_w = ArrayVector.ones(nb_features)
@@ -112,6 +126,9 @@ class LetSIP(
                 case params.iterations =>
                     val glf = weight_function.asInstanceOf[LogisticWeight]
                     logTermination(currentIteration, glf)
+                    //
+                    println("\n~~~~~~~~~~~~~~~~~~~~~~\n")
+                    //
                     glf
                 case _ =>
                     // *************** MINE A SET OF `querySize' PATTERNS *************************************
@@ -143,8 +160,11 @@ class LetSIP(
                     logIterationOutcome(currentIteration, currentQuery, learnedWeight, user)
                     
                     // *************** NEXT ITERATIONS ************************************************
-                    println("\n")
+                    //println("\n")
                     currentIteration += 1
+                    //
+                    println("\n~~~~~~~~~~~~~~~~~~~~~~\n")
+                    //
                     doLoop(learnedWeight)
                     //doLoop(currentIteration + 1, learnedWeight, newState)
             }
@@ -160,6 +180,125 @@ class LetSIP(
     
     // def run_learning(): (String, ScdState) = {
     def run_learning(): String = {
+        learner.toLowerCase match {
+            case "scd" =>
+                scd_learn()
+            case "ranksvm" | "rank_svm" =>
+                rankSVM_learn()
+        }
+        
+        // ********************** UPDATE THE LEARNED FUNCTION *************************************************
+        learnedWeight = LogisticWeight(params.a, all_w, featureMap)
+        val iter_anaDAta = getAnaData(currentIteration, currentQuery, learnedWeight)
+        val iter_results = getIterationOutcome(currentIteration, currentQuery, learnedWeight)
+        
+        iter_results
+        // (iter_results, newState)
+        // ********************** LEARNING FINISHED *********************************************************** 
+    }
+
+    //========================================================================================
+    //================================ LEARNING USING RANKSVM ================================
+    //========================================================================================
+
+    def rankSVM_learn() = {
+        //
+        val currentDateTime: LocalDateTime = LocalDateTime.now()
+        val formatter: DateTimeFormatter = DateTimeFormatter.ofPattern("dd-MM-yyyy")
+        val formattedDate: String = currentDateTime.format(formatter)
+        //
+        val trainPath: String = f"results/RankSVM-DATA/train/$formattedDate/"
+        val modelPath: String = f"results/RankSVM-DATA/model/$formattedDate/"
+        //
+        val train_dir = Paths.get(trainPath)
+        val model_dir = Paths.get(modelPath)
+        //
+        // -------------------------------------------------------------------------
+        //
+        // directory.mkdir()
+        // If you require it to make the entire directory path including parents,
+        // use directory.mkdirs(); here instead.
+        if ( !Files.exists(train_dir) ){
+            Files.createDirectories(train_dir)
+        }
+        if ( !Files.exists(model_dir) ){
+            Files.createDirectories(model_dir)
+        }
+        //
+        // -------------------------------------------------------------------------
+        //
+        val all_elem = from_query_to_vector_str(trainPath, modelPath)
+        val vector_str = all_elem(0)
+        val abs_train_file = all_elem(1)
+        val abs_model_file = all_elem(2)
+        // -------------------------------------------------------------------------
+        val ranksvm_learner = new RankSVMTools(d, abs_train_file, abs_model_file)
+        ranksvm_learner.save_train_data(vector_str)
+        
+        // **************************** RANKSVM LEARNING ******************************************************
+        //println("learning - launch ranksvm")
+        
+        ranksvm_learner.run_ranksvm_learning()
+        
+        //println("learning - parse ranksvm")
+        
+        var learned_w = ranksvm_learner.read_model_file()
+        
+        //-----------------------------------------------------------
+        var it = 0
+        while(it < d) {
+            if(learned_w(it) == -1000.0) {
+                learned_w(it) = all_w(it)
+            }
+            it += 1
+        }
+        //-----------------------------------------------------------
+        
+        //println("learning - update weights")
+        
+        all_w = new ArrayVector(learned_w, d)
+    }
+  
+    def from_query_to_vector_str(trainPath: String, modelPath: String) = {
+        var final_str = ""
+        for(it <- Iterator.range(0, currentIteration+1)) {
+            var queryIT = queries_array(it)
+            final_str += "# query " + (it+1).toString + "\n"
+            //
+            // ***************************************************************
+            //
+            for(e <- Iterator.range(0, k)) {
+                var f = 0
+                d = featureMap.featureCount
+                var features_val = Array.ofDim[String](d)
+                val pattern_vector = features(queryIT(e), featureMap)
+                //
+                // ----------------------------------------
+                while(f < d) {
+                    features_val(f) = (f+1).toString + ":" + pattern_vector(f).toString
+                    f += 1
+                }
+                // ----------------------------------------
+                //
+                final_str += (k-e).toString + " qid:" + (it+1).toString + " "
+                final_str += features_val.mkString(" ") + "\n"
+            }
+            //
+            // ***************************************************************
+            //
+        }
+        val train_file = trainPath + dataname + "-it_" + currentIteration.toString + ".txt"
+        val model_file = modelPath + dataname + "-it_" + currentIteration.toString + ".txt"
+        //
+        //final_str
+        Array(final_str, train_file, model_file)
+    }
+
+    //========================================================================================
+    //================== LEARNING USING SCD (Stochastic Coordinate Descent) ==================
+    //========================================================================================
+    
+    def scd_learn() = {
         //
         // ********************** FORM PAIRS OF PATTERNS TO BE USED FOR THE LEARNING **************************
         rankedPairs(currentQuery, querySize).zipWithIndex.foreach { 
@@ -171,15 +310,6 @@ class LetSIP(
         // ****************************************************************************************************
         // ********************** UPDATE FEATURES ELEMENTS' WEIGHT WRT. THE STRATEGY CHOOSEN (features-update)
         val (_, newState) = updateWeights()
-        
-        // ********************** UPDATE THE LEARNED FUNCTION *************************************************
-        learnedWeight = LogisticWeight(params.a, all_w, featureMap)
-        val iter_anaDAta = getAnaData(currentIteration, currentQuery, learnedWeight)
-        val iter_results = getIterationOutcome(currentIteration, currentQuery, learnedWeight)
-        
-        iter_results
-        // (iter_results, newState)
-        // ********************** LEARNING FINISHED *********************************************************** 
     }
 
     //############################################################################################################

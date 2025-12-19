@@ -140,7 +140,8 @@ final class GaussianRanker(
         f"${utility(itemset)}"
     }
 
-    override def toString: String = "Gaussian"
+    //override def toString: String = "Gaussian"
+    override def toString: String = "GaussianRanker"
 }
 
 object GaussianRanker {
@@ -195,7 +196,8 @@ final class SurprisingnessRanker(
         f"${surprisingness(itemset)}"
     }
 
-    override def toString: String = "Surprisingness"
+    //override def toString: String = "Surprisingness"
+    override def toString: String = "SurprisingnessRanker"
 }
 
 object SurprisingnessRanker {

@@ -19,7 +19,8 @@ import be.kuleuven.pmlib.labels.{Model, QualityMeasure}
 trait MeasureFeature extends FeatureMap {
     def measureName: String
 
-    override final val featureCount = 1
+    override final def featureCount = 1
+    //override final val featureCount = 1
     override final val featureLabels = IndexedSeq(measureName)
 
     def valueFor(itemset: Itemset): Double

@@ -93,31 +93,32 @@ trait LearningLogging {
     var patterns_support = Array.ofDim[Int](query.size) // patterns support
     
     query.view.zipWithIndex.foreach { case (p, i) => {
-      patterns_size(i) = p.size
-      patterns_support(i) = p.items.size
-      
-      anaData = f"${client.describe(p)}%s"
-      phi_val(i) = anaData.replace(',', '.').toDouble
-      
-      //anaData = f"${learnedWeight(p)}%.6f"
-      anaData = f"${learnedWeight(p)}"
-      pct_rank(i) = anaData.replace(',', '.').toDouble
-    }}
+        patterns_support(i) = p.size // #transactions containing the itemset
+        patterns_size(i) = p.items.size
+        
+        anaData = f"${client.describe(p)}%s"
+        phi_val(i) = anaData.replace(',', '.').toDouble
+        
+        //anaData = f"${learnedWeight(p)}%.6f"
+        anaData = f"${learnedWeight(p)}"
+        pct_rank(i) = anaData.replace(',', '.').toDouble
+      }
+    }
     
     anaData = f"\n##$iteration%d-"
-    
-    for(i <- 0 to (query.size-1)){
-      if (i != (query.size-1))
-        anaData += f"${patterns_size(i)};"
-      else
-        anaData += f"${patterns_size(i)}-"
-    }
     
     for(i <- 0 to (query.size-1)){
       if (i != (query.size-1))
         anaData += f"${patterns_support(i)};"
       else
         anaData += f"${patterns_support(i)}-"
+    }
+    
+    for(i <- 0 to (query.size-1)){
+      if (i != (query.size-1))
+        anaData += f"${patterns_size(i)};"
+      else
+        anaData += f"${patterns_size(i)}-"
     }
     
     for(i <- 0 to (query.size-1)){
@@ -199,7 +200,7 @@ trait LearningLogging {
     logger.trace("\tFeature weights:")
     logger.trace(learnedWeight.featureMap.featureLabels.mkString(";"))
     logger.trace((0 until learnedWeight.featureMap.featureCount).map(j => f"${learnedWeight.weights(j)}%.6f").mkString(";"))
-    logger.info("###########################################")
-    logger.info("###########################################\n\n")
+    logger.info("###########################################\n")
+    //logger.info("###########################################\n\n")
   }
 }

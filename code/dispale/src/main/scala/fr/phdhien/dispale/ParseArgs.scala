@@ -79,6 +79,14 @@ object ParseArgs {
         //-----------------------------------------------------------------------------------
         //-----------------------------------------------------------------------------------
         
+        msg = "the rank function. Example : frequencyranker, surprisingnessranker \n\n"
+        val learner: Option = new Option("le", "learn", true, msg)
+        //learner.setRequired(true)
+        all_options.addOption(learner)
+
+        //-----------------------------------------------------------------------------------
+        //-----------------------------------------------------------------------------------
+        
         msg = "the #patterns of current iteration to keep for next iteration\n"
         msg += "Value must be less than k value \n\n"
         val queryRetention: Option = new Option("l", "retention", true, msg)
@@ -192,7 +200,7 @@ object ParseArgs {
             }
             else if (
                         !cmd.hasOption("m") || !cmd.hasOption("d") || !cmd.hasOption("f") || !cmd.hasOption("F") ||
-                        !cmd.hasOption("k") || !cmd.hasOption("l") || !cmd.hasOption("r") || 
+                        !cmd.hasOption("k") || !cmd.hasOption("l") || !cmd.hasOption("r") || !cmd.hasOption("le") || 
                         !cmd.hasOption("o") || !cmd.hasOption("a") || !cmd.hasOption("i")
                     ) {
                 formatter.printHelp(help_msg, all_options)

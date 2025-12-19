@@ -1,7 +1,7 @@
 /*
  * This file is part of the DiSPaLe project (https://gitlab.com/phdhien/dispale)
  *
- * Copyright (c) 2022, Normandie Université, France
+ * Copyright (c) 2024, Normandie Université & Université de Caen-Normandie & IMT Atlantique, France
  *
  * Licensed under the MIT license.
  *
@@ -57,6 +57,7 @@ class MethodSelector{
     //***********************************************************
     var oracle: String = "flexics"
     var algo: String = "eflexics"
+    var learner: String = "scd"
     //***********************************************************
     var ranker: Ranker = null
     var params: Parameters = null
@@ -89,14 +90,16 @@ class MethodSelector{
             LetSIP(
                         method=method, dataset=dataset, datasetPath=dataset_path, //datasetPathFimi=fimi_dataset_path, 
                         params=params, minsup=minsup, oracle=oracle, algo=algo, 
-                        listFeatures=allFeatures, user=ranker, seed=seed
+                        learner=learner, listFeatures=allFeatures, 
+                        user=ranker, seed=seed
                     )
         case "dispale" | "lutomDisc" =>
             Dispale(
                         method=method, dataset=dataset, datasetPath=dataset_path, datasetPathFimi=fimi_dataset_path, 
                         params=params, listFeatures=allFeatures, listFeatures_count=allFeatures_count, 
-                        listFeatures_str=allFeatures_str_tab, minsup=minsup, oracle=oracle, algo=algo, 
-                        aggregation_function=aggregation, user=ranker, seed=seed
+                        learner=learner, listFeatures_str=allFeatures_str_tab, minsup=minsup, 
+                        oracle=oracle, algo=algo, aggregation_function=aggregation, 
+                        user=ranker, seed=seed
                     )
         }
         // letsip_instance
@@ -120,6 +123,7 @@ class MethodSelector{
             queryRetention = parse_cmd.getOptionValue("retention").toInt
             val features_list = parse_cmd.getOptionValue("features").split("-")
             val rankFunction = parse_cmd.getOptionValue("rank")
+            learner = parse_cmd.getOptionValue("learn")
             oracle = if(parse_cmd.hasOption("oracle")) parse_cmd.getOptionValue("oracle") else "flexics"
             algo = if(parse_cmd.hasOption("algo")) parse_cmd.getOptionValue("algo") else "eflexics"
             

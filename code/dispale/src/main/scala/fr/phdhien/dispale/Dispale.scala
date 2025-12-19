@@ -45,6 +45,7 @@ object Dispale {
                 minsup: Int = 10,
                 oracle: String = "flexics", 
                 algo: String = "eflexics",
+                learner: String = "scd",
                 aggregation_function: String = "lin", 
                 user: Ranker = FrequencyRanker,
                 seed: Long = System.nanoTime().hashCode()
@@ -53,7 +54,7 @@ object Dispale {
         new Dispale(
                         method, dataset, datasetPath, datasetPathFimi, params, 
                         listFeatures, listFeatures_count, listFeatures_str, 
-                        minsup, oracle, algo, aggregation_function, user, seed
+                        minsup, oracle, algo, learner, aggregation_function, user, seed
                     )
         //
     }
@@ -71,10 +72,11 @@ class Dispale(
                 override val minsup: Int = 10, 
                 override val oracle: String = "flexics", 
                 override val algo: String = "eflexics",
+                override val learner: String = "scd",
                 val aggregation_function: String = "lin", 
                 override val user: Ranker = FrequencyRanker, 
                 override val seed: Long = System.nanoTime().hashCode()
-            ) extends LetSIP(method, dataset, datasetPath, params, listFeatures, minsup, oracle, algo, user, seed) {
+            ) extends LetSIP(method, dataset, datasetPath, params, listFeatures, minsup, oracle, algo, learner, user, seed) {
     //
     //************************************************************************************************************
     var allFeatures: Array[Features] = listFeatures
@@ -99,6 +101,7 @@ class Dispale(
                 case params.iterations =>
                     val glf = weight_function.asInstanceOf[LogisticWeight]
                     logTermination(currentIteration, glf)
+                    //
                     glf
                 case _ =>
                     // *************** SAMPLE A SET OF `querySize' PATTERNS *************************************
@@ -132,6 +135,9 @@ class Dispale(
                     
                     // *************** NEXT ITERATIONS ************************************************
                     currentIteration += 1
+                    //
+                    println("\n~~~~~~~~~~~~~~~~~~~~~~\n")
+                    //
                     doLoop(learnedWeight)
                     //doLoop(currentIteration + 1, learnedWeight, newState)
             }
@@ -149,21 +155,30 @@ class Dispale(
 
         // ********************** UPDATE WEIGHTS **************************************************************
         add_discriminant_features_to_features_list()
-        
+
         // ********************** FORM PAIRS OF PATTERNS TO BE USED FOR THE LEARNING **************************
         rankedPairs(currentQuery, querySize).zipWithIndex.foreach { 
-            case ((preferred, dispreferred), j) =>
-                trainingPairs(currentIteration * params.pairsPerQuery + j) = new RankedPair(preferred, dispreferred, featureMap)
+            case ((preferred, dispreferred), j) => 
+                    val i = currentIteration * params.pairsPerQuery + j
+                    trainingPairs(i) = new RankedPair(preferred, dispreferred, featureMap)
         }
         
-        // ****************************************************************************************************
-        //  UPDATE FEATURES ELEMENTS WEIGHT W.R.T. THE STRATEGY CHOOSEN (see argument 'features-update' in Main)
-        val state: HotStart = HotStart(all_w, z)
-        current_state = state
-        
-        val (_, updated_state) = updateWeights()
+        //
+        // -------------------------------------------------------------------------
+        //
+        learner.toLowerCase match {
+            case "scd" =>
+                scd_learn()
+            case "ranksvm" | "rank_svm" =>
+                rankSVM_learn()
+        }
+        //
+        // -------------------------------------------------------------------------
+        //
         
         remove_discriminant_features_from_features_list()
+
+        d = featureMap.featureCount
         
         // ********************** GET THE LEARNED FUNCTION ****************************************************
         val learnedWeight = LogisticWeight(params.a, all_w, featureMap)
@@ -174,6 +189,37 @@ class Dispale(
         
         iter_results
         // (iter_results, HotStart(all_w, z))
+    }
+
+    //========================================================================================
+    //================== LEARNING USING SCD (Stochastic Coordinate Descent) ==================
+    //========================================================================================
+    
+    override def scd_learn() = {
+        //
+        // ****************************************************************************************************
+        // ********************** UPDATE FEATURES ELEMENTS' WEIGHT WRT. THE STRATEGY CHOOSEN (features-update)
+        val (_, newState) = updateWeights()
+        // val (_, updated_state) = updateWeights()
+    }
+    
+    override def updateWeights() = {
+
+        //  UPDATE FEATURES ELEMENTS WEIGHT W.R.T. THE STRATEGY CHOOSEN (see argument 'features-update' in Main)
+        val state_ = HotStart(all_w, z)
+        current_state = state_
+
+        val m = (currentIteration + 1) * params.pairsPerQuery
+        val trainingExamples = trainingPairs.view(0, m)
+
+        val state: ScdState = 
+            if(currentIteration > 0) showNewExamplesToSCD(current_state, z, currentIteration, m) else current_state
+
+        SCD.optimize(
+                        loss, trainingExamples, currentIteration, 
+                        params.scd.copy( lambda= params.scd.lambda * (currentIteration + 1) ),
+                        state=state, m=Some(m), d=Some(nb_features)
+                    )(rnd)
     }
 
     //############################################################################################################
@@ -211,23 +257,35 @@ class Dispale(
     
     def get_discriminating_features_list(nbToAddOrRemove: Int): Array[Features] = {
         var discriminating_features: Array[Features] = Array.fill(nbToAddOrRemove)(null)
-
-        discriminating_features(0) = Patterns
-        discriminating_features(0).setNbElt(1)
-        discriminating_features(0).setRefPatterns(Array.fill(1)(best_icv_itemset))
+        //
+        var _nb = 0
+        //
+        discriminating_features(_nb) = Patterns
+        discriminating_features(_nb).setNbElt(1)
+        discriminating_features(_nb).setRefPatterns(Array.fill(1)(best_icv_itemset))
 
         if(!discriminatingPatterns.exists(x => x._1 == best_icv_itemset.items)){
             discriminatingPatterns.put(best_icv_itemset.items, 0.0)
         }
-
         if(listFeatures_str.contains("F")){
-            discriminating_features(1) = DiscriminativeFrequency
+            //
+            _nb += 1
+            //
+            discriminating_features(_nb) = DiscriminativeFrequency
+            discriminating_features(_nb).setRefPatterns(Array.fill(1)(best_icv_itemset))
+            //
             if(!discriminatingFrequencies.exists(x => x._1 == best_icv_itemset.items)){
                 discriminatingFrequencies.put(best_icv_itemset.items, 0.0)
             }
         }
+        //
         if(listFeatures_str.contains("L")){
-            discriminating_features(2) = DiscriminativeLength
+            //
+            _nb += 1
+            //
+            discriminating_features(_nb) = DiscriminativeLength
+            discriminating_features(_nb).setRefPatterns(Array.fill(1)(best_icv_itemset))
+            //
             if(!discriminatingLengths.exists(x => x._1 == best_icv_itemset.items)){
                 discriminatingLengths.put(best_icv_itemset.items, 0.0)
             }
@@ -265,27 +323,9 @@ class Dispale(
         icvObject.enumerateItemsets()
         best_icv_itemset = covert_to_itemset(dataset, icvObject)
         // best_icv_itemset
-        println(f"\n++$currentIteration-${best_icv_itemset.items}")
+        println(f"\n++$currentIteration-${best_icv_itemset.items}\n")
         
         icvObject.reset()
-    }
-
-    //############################################################################################################
-    //############################################################################################################
-
-    override def updateWeights() = {
-
-        val m = (currentIteration + 1) * params.pairsPerQuery
-        val trainingExamples = trainingPairs.view(0, m)
-
-        val state: ScdState = 
-            if(currentIteration > 0) showNewExamplesToSCD(current_state, z, currentIteration, m) else current_state
-
-        SCD.optimize(
-                        loss, trainingExamples, currentIteration, 
-                        params.scd.copy( lambda= params.scd.lambda * (currentIteration + 1) ),
-                        state=state, m=Some(m), d=Some(nb_features)
-                )(rnd)
     }
     
     //############################################################################################################
@@ -312,11 +352,11 @@ class Dispale(
             newFeatures(allFeatures.size) = featuresToBeAddedOrRemoved(0)
             var it = 1
             if(listFeatures_str.contains("F")){
-                newFeatures(allFeatures.size+it) = featuresToBeAddedOrRemoved(1)
+                newFeatures(allFeatures.size+it) = featuresToBeAddedOrRemoved(it)
                 it = it+1
             }
             if(listFeatures_str.contains("L")){
-                newFeatures(allFeatures.size+it) = featuresToBeAddedOrRemoved(2)
+                newFeatures(allFeatures.size+it) = featuresToBeAddedOrRemoved(it)
             }
         }
         allFeatures = newFeatures
@@ -378,15 +418,15 @@ class Dispale(
                 }
                 else if(listFeatures_str(it) == "L"){
                     (deb until fin).foreach{ i =>
-                        new_w(i) = aggregation_value(new_w(i), discriminating_weights(1))
+                        new_w(i) = aggregation_value(new_w(i), discriminating_weights(2))
                     }
-                    discriminatingLengths(best_icv_itemset.items) = discriminating_weights(1)
+                    discriminatingLengths(best_icv_itemset.items) = discriminating_weights(2)
                 }
                 else if(listFeatures_str(it) == "F"){
                     (deb until fin).foreach{ i =>
-                        new_w(i) = aggregation_value(new_w(i), discriminating_weights(2))
+                        new_w(i) = aggregation_value(new_w(i), discriminating_weights(1))
                     }
-                    discriminatingFrequencies(best_icv_itemset.items) = discriminating_weights(2)
+                    discriminatingFrequencies(best_icv_itemset.items) = discriminating_weights(1)
                 }
                 it = it+1
             }
@@ -432,7 +472,9 @@ class Dispale(
         // ********************** Update all patterns description by adding 1,2,3 new elements ****************
         if(currentIteration>0){
             (0 until (currentIteration * params.pairsPerQuery)).foreach {
-                i => trainingPairs(i).update_pairs_new(featureMap.featureCount, 1)
+                i => {
+                        trainingPairs(i).update_pairs_new(featureMap.featureCount, 1)
+                    }
             }
         }
     }
