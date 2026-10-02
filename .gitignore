@@ -1,0 +1,17 @@
+# Gradle
+code/.gradle/
+.gradle/
+**/build/
+
+# Python
+__pycache__/
+*.pyc
+
+# Run outputs and build logs
+results/
+
+# Editors / OS
+.idea/
+.vscode/
+*.iml
+.DS_Store
