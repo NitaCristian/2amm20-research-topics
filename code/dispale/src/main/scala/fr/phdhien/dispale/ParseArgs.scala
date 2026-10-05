@@ -167,6 +167,25 @@ object ParseArgs {
         //-----------------------------------------------------------------------------------
         //-----------------------------------------------------------------------------------
         
+        msg = "max number of discriminating sub-patterns used per iteration (dispale, lutomDisc). Default Value : 1 \n\n"
+        val nbSubPatterns: Option = new Option("nd", "nb-disc", true, msg)
+        all_options.addOption(nbSubPatterns)
+        
+        msg = "how the discriminating sub-patterns are selected. Values: top | complementary. Default Value : complementary \n\n"
+        val selection: Option = new Option("sel", "selection", true, msg)
+        all_options.addOption(selection)
+        
+        msg = "redundancy penalty of the complementary selection, between 0 (= top) and 1. Default Value : 1.0 \n\n"
+        val redundancy: Option = new Option("rw", "redundancy-weight", true, msg)
+        all_options.addOption(redundancy)
+        
+        msg = "initial weight of every feature. Default Value : 0 for letsip and dispale, 1 for lutom and lutomDisc \n\n"
+        val initWeight: Option = new Option("iw", "init-weight", true, msg)
+        all_options.addOption(initWeight)
+
+        //-----------------------------------------------------------------------------------
+        //-----------------------------------------------------------------------------------
+        
         val help: Option = new Option("h", "help", true, "help \n")
         //help.setRequired(true)
         all_options.addOption(help)
