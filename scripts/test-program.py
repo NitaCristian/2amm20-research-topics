@@ -38,7 +38,7 @@ hui_methods = ["lutom", "lutomDisc"]
 #
 #--------------------------------------------------------
 #
-disc_aggregation = ["exp", "EXP", "LIN", "lin"] # Exponential and Linear
+disc_aggregation = ["exp", "EXP", "LIN", "lin", "ADD", "add"] # Exponential, Linear (multiplicative) and Additive
 #
 #--------------------------------------------------------
 #
@@ -62,6 +62,7 @@ features_abbrv = ["F", "I", "L", "T", "FI", "FL", "FT", "IL", "IT", "LT", "FIL",
 hui_features_abbrv = ["I", "IT"]
 #
 fUpdate = ["all", "ALL", "rnd", "RND"]
+disc_selection = ["top", "complementary"]
 #
 #=====================================================================================
 #=====================================================================================
@@ -178,7 +179,7 @@ def get_argParser():
     #
     parser.add_argument("-t", "--tilt", type=float, nargs=1, help="tilt parameter for the weight function ")
     parser.add_argument("-e", "--eta", type=float, nargs=1, help=f"the regularization parameter of methods {disc_methods} ")
-    parser.add_argument("-ag", "--aggregation", type=str, nargs=1, default="LIN", choices=disc_aggregation, help=f"the regularization parameter agregation function ")
+    parser.add_argument("-ag", "--aggregation", type=str, default="ADD", choices=disc_aggregation, help=f"how the weight of a discriminating sub-pattern is apportioned to its items: ADD (w + eta*d, default), LIN (w*(1+eta*d)) or EXP (w*exp(eta*d)); LIN and EXP are the original ones, meant for weights starting at 1 (-iw 1)")
     #
     #parser.add_argument("-FU", "--featsUpdate", type=str, nargs=1, default="ALL", choices=fUpdate, help=f"define how the features weights should be updated ")
     #
@@ -187,6 +188,10 @@ def get_argParser():
     parser.add_argument("-to", "--timeout", type=int, help="the time limit (in sec.) within which the program must run ")
     #
     parser.add_argument("-s", "--seed", type=int, nargs="?", help="the the random seed")
+    parser.add_argument("-nd", "--nb-disc", type=int, default=1, help=f"max number of discriminating sub-patterns used per iteration by {disc_methods} (default: 1, the original DiSPaLe)")
+    parser.add_argument("-sel", "--selection", type=str, default="complementary", choices=disc_selection, help="how the discriminating sub-patterns are selected: the `top' ICV ones, or `complementary' ones (high ICV, low redundancy)")
+    parser.add_argument("-iw", "--init-weight", type=float, default=None, help="initial weight of every feature (default: 0 for letsip and dispale, 1 for lutom and lutomDisc). The original code used 1, which saturates the logistic weight function and makes the sampling almost uniform")
+    parser.add_argument("-rw", "--redundancy-weight", type=float, default=1.0, help="redundancy penalty of the complementary selection, in [0, 1] (0 = same as top)")
     #
     return parser
 #
@@ -216,13 +221,19 @@ def parse_parameters():
     aggreg:str = params.aggregation if params.aggregation else "LIN"
     #featsUpdate:str = params.featsUpdate[0] if params.featsUpdate else "RND"
     weightsFile:str = params.weights[0] if params.weights else ""
-    rndSeed:int = params.seed[0] if params.seed else seed
+    rndSeed:int = params.seed if params.seed is not None else seed
     tilt:float = params.tilt[0] if params.tilt else 10.0
     timeout:int = params.timeout if params.timeout else 3600
+    nbDisc:int = params.nb_disc
+    selection:str = params.selection
+    redundancyWeight:float = params.redundancy_weight
+    initWeight = params.init_weight
     #
     #-------------------------------------------------------------------
     #
     assert nbIter > 0, f"The number of iterations must be strictly positive."
+    assert nbDisc > 0, f"The number of discriminating sub-patterns must be strictly positive."
+    assert 0 <= redundancyWeight <= 1, f"The redundancy weight must be in range [0, 1]."
     assert queryRetention in range(0, queryK), f"The query retention parameter must be in range [0, {queryK-1}]."
     assert format_features(feats) in features_abbrv, f"The features used must be in {all_features} or a combination of this list elements separated by `-'."
     assert (freq>0) and (freq<1), f"the minimum frequency value must be in range ]0, 1[."
@@ -246,6 +257,7 @@ def parse_parameters():
     #
     parameters = (method, data, freq, feats, oracle.lower(), algo.lower(), learner.lower(), rankFunction, nbIter, )
     parameters += (queryK, queryRetention, eta, aggreg, featsUpdate, tilt, weightsFile, rndSeed, timeout)
+    parameters += (nbDisc, selection, redundancyWeight, initWeight)
     
     print(f"\n\n{parameters}\n\n")
     print("~~~~~~~~~~~~~~~~~~~~~~\n")
@@ -267,7 +279,8 @@ def get_arguments():
     #
     parameters = parse_parameters()
     (method, dataname, freq, feats, oracle, algo, learner, ranker, nbIter) = parameters[:9]
-    (queryK, queryR, eta, aggreg, featsUpdate, tilt, weightsFile, rndSeed, timeout) = parameters[-9:]
+    (queryK, queryR, eta, aggreg, featsUpdate, tilt, weightsFile, rndSeed, timeout) = parameters[9:18]
+    (nbDisc, selection, redundancyWeight, initWeight) = parameters[18:22]
     #
     #-------------------------------------------------------------------
     #
@@ -284,7 +297,10 @@ def get_arguments():
     # command for execution
     arguments = f"-m {method} -o {oracle} -a {algo} -F {feats} -r {ranker} -k {queryK} -f {minsup} -i {nbIter} "
     arguments += f"-le {learner} -ag {aggreg} -e {eta} -t {tilt} -l {queryR} -FU {featsUpdate} -s {rndSeed} "
-    arguments += f"-d {data_file_cp4im} -FI {data_file_fimi}"
+    arguments += f"-d {data_file_cp4im} -FI {data_file_fimi} "
+    arguments += f"-nd {nbDisc} -sel {selection} -rw {redundancyWeight}"
+    if initWeight is not None:
+        arguments += f" -iw {initWeight}"
     #
     if str(weightsFile):
         arguments += f" -w {weightsFile}"

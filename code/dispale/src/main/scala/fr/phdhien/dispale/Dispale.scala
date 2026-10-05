@@ -48,13 +48,17 @@ object Dispale {
                 learner: String = "scd",
                 aggregation_function: String = "lin", 
                 user: Ranker = FrequencyRanker,
-                seed: Long = System.nanoTime().hashCode()
+                seed: Long = System.nanoTime().hashCode(),
+                nbSubPatterns: Int = 1,
+                selection: String = "complementary",
+                redundancyWeight: Double = 1.0
             ): Dispale = {
         //
         new Dispale(
                         method, dataset, datasetPath, datasetPathFimi, params, 
                         listFeatures, listFeatures_count, listFeatures_str, 
-                        minsup, oracle, algo, learner, aggregation_function, user, seed
+                        minsup, oracle, algo, learner, aggregation_function, user, seed,
+                        nbSubPatterns, selection, redundancyWeight
                     )
         //
     }
@@ -75,19 +79,23 @@ class Dispale(
                 override val learner: String = "scd",
                 val aggregation_function: String = "lin", 
                 override val user: Ranker = FrequencyRanker, 
-                override val seed: Long = System.nanoTime().hashCode()
+                override val seed: Long = System.nanoTime().hashCode(),
+                val nbSubPatterns: Int = 1,                 // max #discriminating sub-patterns used per iteration (m)
+                val selection: String = "complementary",    // how they are selected: top | complementary
+                val redundancyWeight: Double = 1.0          // redundancy penalty of the complementary selection
             ) extends LetSIP(method, dataset, datasetPath, params, listFeatures, minsup, oracle, algo, learner, user, seed) {
     //
     //************************************************************************************************************
     var allFeatures: Array[Features] = listFeatures
     //************************************************************************************************************
-    var best_icv_itemset:Itemset = null
+    var best_icv_itemsets: Array[Itemset] = Array()   // discriminating sub-patterns of the current iteration
     var discriminatingPatterns = HashMap[Set[Int], Double]()  // used to save discriminating Patterns
     var discriminatingLengths = HashMap[Set[Int], Double]()  // used to save discriminating pattern length weight
     var discriminatingFrequencies = HashMap[Set[Int], Double]()  // used to save discriminating pattern frequency weight
     //************************************************************************************************************
     // used to compute best ICV itemset
     var icvObject : BestICVSubset = new BestICVSubset(params.querySize, datasetPathFimi)
+    icvObject.setSelection(nbSubPatterns, selection, redundancyWeight)
     //************************************************************************************************************
     protected override val logger = Logger(LoggerFactory.getLogger("DiSPaLe"))  
     
@@ -181,7 +189,8 @@ class Dispale(
         d = featureMap.featureCount
         
         // ********************** GET THE LEARNED FUNCTION ****************************************************
-        val learnedWeight = LogisticWeight(params.a, all_w, featureMap)
+        // assign the field (not a local val): it is the weight function used to sample the next query
+        learnedWeight = LogisticWeight(params.a, all_w, featureMap)
         
         // ********************** PRINT LOGS ******************************************************************
         val iter_anaDAta = getAnaData(currentIteration, currentQuery, learnedWeight)
@@ -206,14 +215,13 @@ class Dispale(
     override def updateWeights() = {
 
         //  UPDATE FEATURES ELEMENTS WEIGHT W.R.T. THE STRATEGY CHOOSEN (see argument 'features-update' in Main)
-        val state_ = HotStart(all_w, z)
-        current_state = state_
-
         val m = (currentIteration + 1) * params.pairsPerQuery
         val trainingExamples = trainingPairs.view(0, m)
 
-        val state: ScdState = 
-            if(currentIteration > 0) showNewExamplesToSCD(current_state, z, currentIteration, m) else current_state
+        // WarmStart: recompute the inner products of all examples, since the features and
+        // the weights changed (discriminating features added, weights apportioned) since the last call
+        val state: ScdState = WarmStart(all_w)
+        current_state = state
 
         SCD.optimize(
                         loss, trainingExamples, currentIteration, 
@@ -225,14 +233,13 @@ class Dispale(
     //############################################################################################################
     //############################################################################################################
     
-    def covert_to_itemset(dataset: Dataset[Set[Int]], icvObject : BestICVSubset): Itemset = {
-        Itemset(extractItems(icvObject), dataset, extractMask(dataset, icvObject))
+    def covert_to_itemset(dataset: Dataset[Set[Int]], icvObject : BestICVSubset, j: Int): Itemset = {
+        Itemset(extractItems(icvObject, j), dataset, extractMask(dataset, icvObject, j))
     }
 
-    def extractItems(icvObject : BestICVSubset): Set[Int] = {
-        val sol = icvObject.getBestSolutionItems()
+    def extractItems(icvObject : BestICVSubset, j: Int): Set[Int] = {
+        val sol = icvObject.getSolutionItems(j)
         var solution = scala.collection.mutable.Set[Int]()
-        var i = 0
         val it = sol.iterator();
         while(it.hasNext()) {
             solution.add(it.next())
@@ -240,54 +247,48 @@ class Dispale(
         solution.toSet
     }
 
-    def extractMask(dataset: Dataset[Set[Int]], icvObject : BestICVSubset): Option[Mask] = {
+    def extractMask(dataset: Dataset[Set[Int]], icvObject : BestICVSubset, j: Int): Option[Mask] = {
         val builder = new MaskBuilder(datasetSize = dataset.size)
-        val cov = icvObject.getBestSolutionCover()
-        //*
+        val cov = icvObject.getSolutionCover(j)
         val it = cov.iterator();
         while(it.hasNext()) {
             builder.set(it.next())
         }
-        //*/
         Some(builder.build())
     }
 
     //############################################################################################################
     //############################################################################################################
-    
-    def get_discriminating_features_list(nbToAddOrRemove: Int): Array[Features] = {
-        var discriminating_features: Array[Features] = Array.fill(nbToAddOrRemove)(null)
-        //
-        var _nb = 0
-        //
-        discriminating_features(_nb) = Patterns
-        discriminating_features(_nb).setNbElt(1)
-        discriminating_features(_nb).setRefPatterns(Array.fill(1)(best_icv_itemset))
 
-        if(!discriminatingPatterns.exists(x => x._1 == best_icv_itemset.items)){
-            discriminatingPatterns.put(best_icv_itemset.items, 0.0)
+    // feature types added for each discriminating sub-pattern: the pattern itself, and its frequency / length
+    // when the base features contain Frequency / Length
+    def nb_discriminating_feature_types: Int = {
+        1 + (if(listFeatures_str.contains("F")) 1 else 0) + (if(listFeatures_str.contains("L")) 1 else 0)
+    }
+
+    // one feature group per type, each group holding one feature per sub-pattern:
+    // [Patterns(S_1..S_m), DiscriminativeFrequency(S_1..S_m), DiscriminativeLength(S_1..S_m)]
+    def get_discriminating_features_list(): Array[Features] = {
+        val m = best_icv_itemsets.length
+        var discriminating_features = Array[Features](Patterns)
+        Patterns.setNbElt(m)
+        Patterns.setRefPatterns(best_icv_itemsets)
+
+        best_icv_itemsets.foreach { s => 
+            if(!discriminatingPatterns.contains(s.items)) discriminatingPatterns.put(s.items, 0.0)
         }
         if(listFeatures_str.contains("F")){
-            //
-            _nb += 1
-            //
-            discriminating_features(_nb) = DiscriminativeFrequency
-            discriminating_features(_nb).setRefPatterns(Array.fill(1)(best_icv_itemset))
-            //
-            if(!discriminatingFrequencies.exists(x => x._1 == best_icv_itemset.items)){
-                discriminatingFrequencies.put(best_icv_itemset.items, 0.0)
+            DiscriminativeFrequency.setRefPatterns(best_icv_itemsets)
+            discriminating_features :+= DiscriminativeFrequency
+            best_icv_itemsets.foreach { s => 
+                if(!discriminatingFrequencies.contains(s.items)) discriminatingFrequencies.put(s.items, 0.0)
             }
         }
-        //
         if(listFeatures_str.contains("L")){
-            //
-            _nb += 1
-            //
-            discriminating_features(_nb) = DiscriminativeLength
-            discriminating_features(_nb).setRefPatterns(Array.fill(1)(best_icv_itemset))
-            //
-            if(!discriminatingLengths.exists(x => x._1 == best_icv_itemset.items)){
-                discriminatingLengths.put(best_icv_itemset.items, 0.0)
+            DiscriminativeLength.setRefPatterns(best_icv_itemsets)
+            discriminating_features :+= DiscriminativeLength
+            best_icv_itemsets.foreach { s => 
+                if(!discriminatingLengths.contains(s.items)) discriminatingLengths.put(s.items, 0.0)
             }
         }
 
@@ -321,9 +322,11 @@ class Dispale(
             it = it+1
         }
         icvObject.enumerateItemsets()
-        best_icv_itemset = covert_to_itemset(dataset, icvObject)
-        // best_icv_itemset
-        println(f"\n++$currentIteration-${best_icv_itemset.items}\n")
+        best_icv_itemsets = Array.tabulate(icvObject.getNbSelected()) { j => covert_to_itemset(dataset, icvObject, j) }
+        
+        best_icv_itemsets.zipWithIndex.foreach { case (s, j) => 
+            println(f"\n++$currentIteration-$j-${s.items}-icv=${icvObject.getSolutionICV(j)}%.4f\n")
+        }
         
         icvObject.reset()
     }
@@ -331,72 +334,42 @@ class Dispale(
     //############################################################################################################
     //############################################################################################################
 
-    def update_features_list(code: Int, nbToAddOrRemove: Int, featuresToBeAddedOrRemoved: Array[Features]): Unit = {
-        // code is used to know whether to :
-        // --> increase: add the discriminant pattern to the list (code=1)
-        // or
-        // --> decrease : remove the discriminant pattern to the list (code=2)
-        // the number of features
-        var newFeatures:Array[Features] = {
-            if(code==1)
-                Array.fill(allFeatures.size+nbToAddOrRemove)(null)
-            else
-                Array.fill(allFeatures.size-nbToAddOrRemove)(null)
-        }
-        val o = if(code==1) -nbToAddOrRemove else 0 // offset
-
-        (0 until (newFeatures.size+o)).foreach{ 
-            i => newFeatures(i) = allFeatures(i)
-        }
-        if(code==1){
-            newFeatures(allFeatures.size) = featuresToBeAddedOrRemoved(0)
-            var it = 1
-            if(listFeatures_str.contains("F")){
-                newFeatures(allFeatures.size+it) = featuresToBeAddedOrRemoved(it)
-                it = it+1
-            }
-            if(listFeatures_str.contains("L")){
-                newFeatures(allFeatures.size+it) = featuresToBeAddedOrRemoved(it)
-            }
-        }
-        allFeatures = newFeatures
-        //newFeatures
-    }
-
-    //############################################################################################################
-    //############################################################################################################
-
     def aggregation_value(new_val: Double, disc_val: Double) = {
-        if(aggregation_function == "lin") new_val * (1 + (params.eta*disc_val)) else new_val * exp(params.eta*disc_val)
+        aggregation_function match {
+            case "lin" => new_val * (1 + (params.eta*disc_val))
+            case "exp" => new_val * exp(params.eta*disc_val)
+            // additive: the direction does not depend on the sign of the item weight
+            // (lin/exp make a negative weight more negative when the sub-pattern is liked)
+            case "add" => new_val + params.eta*disc_val
+        }
     }
     
     //############################################################################################################
     //############################################################################################################
 
-    def update_weight_list(code: Int, discriminating_weights: Array[Double], nbToAddOrRemove: Int): Unit = {
-        // either increase or decrease
-        val e = all_w.length
-        var new_w = if(code==1) ArrayVector.zeros(e+nbToAddOrRemove) else ArrayVector.zeros(e-nbToAddOrRemove)
-
-        val o = if(code==1) 0 else -nbToAddOrRemove // offset
-        (0 until (e+o)).foreach{ i =>
-            new_w(i) = all_w(i)
+    // weights of the discriminating features, in the same order as get_discriminating_features_list():
+    // (pattern, frequency, length) weight of each sub-pattern, NegativeInfinity when the type is not used
+    def get_discriminating_weights(weightOf: (Int, Int) => Double): Array[Array[Double]] = {
+        val m = best_icv_itemsets.length
+        val hasF = listFeatures_str.contains("F")
+        val hasL = listFeatures_str.contains("L")
+        Array.tabulate(m) { j =>
+            val wP = weightOf(0, j)
+            val wF = if(hasF) weightOf(1, j) else Double.NegativeInfinity
+            val wL = if(hasL) weightOf(if(hasF) 2 else 1, j) else Double.NegativeInfinity
+            Array(wP, wF, wL)
         }
+    }
 
-        if(code==1){
-            var it = 1
-            new_w(e) = discriminating_weights(0)
-            if(listFeatures_str.contains("F")){
-                new_w(e+it) = discriminating_weights(1)
-                it = it+1
-            }
-            if(listFeatures_str.contains("L")){
-                new_w(e+it) = discriminating_weights(2)
-            }
-        }
-        else{
+    //############################################################################################################
+    //############################################################################################################
+
+    // apportion the weights learned for the discriminating sub-patterns to the base features.
+    // When several sub-patterns share an item (or transaction), their aggregations are applied one after the other
+    def apportion_discriminating_weights(new_w: ArrayVector, discriminating_weights: Array[Array[Double]]): Unit = {
+        best_icv_itemsets.zipWithIndex.foreach { case (s, j) =>
+            val Array(wP, wF, wL) = discriminating_weights(j)
             var it = 0
-
             while(it < listFeatures_str.size) {
                 var deb = 0
                 (0 until it).foreach{ i => deb = deb+listFeatures_count(i) }
@@ -404,38 +377,34 @@ class Dispale(
 
                 if(listFeatures_str(it) == "I"){
                     (deb until fin).foreach{ i =>
-                        if(best_icv_itemset.items(i)){
-                            new_w(i) = aggregation_value(new_w(i), discriminating_weights(0))
+                        if(s.items(i-deb)){
+                            new_w(i) = aggregation_value(new_w(i), wP)
                         }
                     }
                 }
                 else if(listFeatures_str(it) == "T"){
                     (deb until fin).foreach{ i =>
-                        if(best_icv_itemset.mask.isCovering(i-deb)){
-                            new_w(i) = aggregation_value(new_w(i), discriminating_weights(0))
+                        if(s.mask.isCovering(i-deb)){
+                            new_w(i) = aggregation_value(new_w(i), wP)
                         }
                     }
                 }
                 else if(listFeatures_str(it) == "L"){
                     (deb until fin).foreach{ i =>
-                        new_w(i) = aggregation_value(new_w(i), discriminating_weights(2))
+                        new_w(i) = aggregation_value(new_w(i), wL)
                     }
-                    discriminatingLengths(best_icv_itemset.items) = discriminating_weights(2)
+                    discriminatingLengths(s.items) = wL
                 }
                 else if(listFeatures_str(it) == "F"){
                     (deb until fin).foreach{ i =>
-                        new_w(i) = aggregation_value(new_w(i), discriminating_weights(1))
+                        new_w(i) = aggregation_value(new_w(i), wF)
                     }
-                    discriminatingFrequencies(best_icv_itemset.items) = discriminating_weights(1)
+                    discriminatingFrequencies(s.items) = wF
                 }
                 it = it+1
             }
-
-            discriminatingPatterns(best_icv_itemset.items) = discriminating_weights(0)
+            discriminatingPatterns(s.items) = wP
         }
-
-        //new_w
-        all_w = new_w
     }
 
     //############################################################################################################
@@ -444,32 +413,38 @@ class Dispale(
     def add_discriminant_features_to_features_list() = {
         
         // ********************** New discriminating features *************************************************
-        var nbToAddOrRemove = 1 // discriminating features elements to be added (or removed when finished)
-        nbToAddOrRemove = if(listFeatures_str.contains("F")) nbToAddOrRemove+1 else nbToAddOrRemove
-        nbToAddOrRemove = if(listFeatures_str.contains("L")) nbToAddOrRemove+1 else nbToAddOrRemove
-        
-        var discriminating_features = get_discriminating_features_list(nbToAddOrRemove)
+        val discriminating_features = get_discriminating_features_list()
+        val nbToAdd = best_icv_itemsets.length * nb_discriminating_feature_types
         
         // ********************** update features list : add discriminating features **************************
-        update_features_list(1, nbToAddOrRemove, discriminating_features)
+        allFeatures = allFeatures ++ discriminating_features
         
         // ********************** Updating feature map by adding discriminating features **********************
         update_featureMap()
         
-        // *********************** Variables Wi representing the discriminating weights ***********************
-        // w1 : discriminating pattern weight
-        val w1 = discriminatingPatterns(best_icv_itemset.items)
-        // w2 : discriminating pattern frequency weight
-        val w2 = if(listFeatures_str.contains("F")) discriminatingFrequencies(best_icv_itemset.items) else Double.NegativeInfinity
-        // w3 : discriminating pattern length weight
-        val w3 = if(listFeatures_str.contains("L")) discriminatingLengths(best_icv_itemset.items) else Double.NegativeInfinity
-        // all discriminating weights array list
-        val discriminating_weights = Array(w1, w2, w3)
-        
         // ********************** Updating weights list by adding discriminating weights **********************
-        update_weight_list(1, discriminating_weights, nbToAddOrRemove)
+        // start from the weight learned the last time each sub-pattern was used (0 if never used)
+        val discriminating_weights = get_discriminating_weights { (t, j) =>
+            val s = best_icv_itemsets(j).items
+            t match {
+                case 0 => discriminatingPatterns(s)
+                case _ if t == 1 && listFeatures_str.contains("F") => discriminatingFrequencies(s)
+                case _ => discriminatingLengths(s)
+            }
+        }
+        val e = all_w.length
+        val new_w = ArrayVector.zeros(e + nbToAdd)
+        (0 until e).foreach { i => new_w(i) = all_w(i) }
+        val m = best_icv_itemsets.length
+        (0 until m).foreach { j =>
+            new_w(e + j) = discriminating_weights(j)(0)
+            var t = 1
+            if(listFeatures_str.contains("F")){ new_w(e + t*m + j) = discriminating_weights(j)(1); t += 1 }
+            if(listFeatures_str.contains("L")){ new_w(e + t*m + j) = discriminating_weights(j)(2) }
+        }
+        all_w = new_w
         
-        // ********************** Update all patterns description by adding 1,2,3 new elements ****************
+        // ********************** Update all patterns description by adding the new elements ******************
         if(currentIteration>0){
             (0 until (currentIteration * params.pairsPerQuery)).foreach {
                 i => {
@@ -478,8 +453,6 @@ class Dispale(
             }
         }
     }
-  
-  
 
     //############################################################################################################
     //############################################################################################################
@@ -487,43 +460,23 @@ class Dispale(
     def remove_discriminant_features_from_features_list() = {
 
         // ********************** Updating feature map by removing discriminating feature *********************
-        var nbToAddOrRemove = 1 // discriminating features elements to be added (or removed when finished)
-        nbToAddOrRemove = if(listFeatures_str.contains("F")) nbToAddOrRemove+1 else nbToAddOrRemove
-        nbToAddOrRemove = if(listFeatures_str.contains("L")) nbToAddOrRemove+1 else nbToAddOrRemove
-        
-        var discriminating_features = get_discriminating_features_list(nbToAddOrRemove)
-        
-        update_features_list(2, nbToAddOrRemove, discriminating_features)
-        
-        // ********************** Updating feature map by removing discriminating features ********************
+        val nbToRemove = best_icv_itemsets.length * nb_discriminating_feature_types
+        allFeatures = allFeatures.take(allFeatures.size - nb_discriminating_feature_types)
         update_featureMap()
         
         // ********************** get discriminating features elements to be removed **************************
-        var it=1
-        val w1 = all_w(allFeatures.size)
-
-        val w2 = 
-            if(listFeatures_str.contains("F")){
-                it = it+1
-                all_w(allFeatures.size+it-1)
-            } else {
-                Double.NegativeInfinity
-            }
-        
-        val w3 = 
-            if(listFeatures_str.contains("L")){
-                it = it+1
-                all_w(allFeatures.size+it-1)
-            } else {
-                Double.NegativeInfinity
-            }
-        
-        val discriminating_weights = Array(w1, w2, w3)
+        // they are stored right after the base features
+        val base = featureMap.featureCount
+        val m = best_icv_itemsets.length
+        val discriminating_weights = get_discriminating_weights { (t, j) => all_w(base + t*m + j) }
         
         // ********************** Updating weights list by removing discriminating weights ********************
-        update_weight_list(2, discriminating_weights, nbToAddOrRemove)
+        val new_w = ArrayVector.zeros(all_w.length - nbToRemove)
+        (0 until base).foreach { i => new_w(i) = all_w(i) }
+        apportion_discriminating_weights(new_w, discriminating_weights)
+        all_w = new_w
         
-        // ********************** Update all patterns description by removing 1,2 or 3 elements ***************
+        // ********************** Update all patterns description by removing the elements ********************
         if( currentIteration > 0 ){
             (0 until (currentIteration * params.pairsPerQuery)).foreach {
                 i => trainingPairs(i).update_pairs_new(featureMap.featureCount, 2)

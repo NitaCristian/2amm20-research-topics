@@ -32,18 +32,23 @@ object DiscriminativeLength extends FeatureMapGenerator {
     override def toString: String = "DiscriminativeLength"
 }
 
+// one feature per discriminating sub-pattern
 final case class DiscriminativeLengthFeature(
-                                                override val scalingConstant: Double, 
-                                                patterns: Array[Itemset]
-                                            ) extends UnscaledMeasureFeature {
+                                                    scalingConstant: Double, 
+                                                    patterns: Array[Itemset]
+                                                ) extends FeatureMap {
     //
-    override def measureName: String = "DiscriminativeLength"
     val refPatterns = patterns
 
-    //override def unscaledValueFor(itemset: Itemset): Double = itemset.description.length
-    override def unscaledValueFor(itemset: Itemset): Double = {
-        if (refPatterns(0).items.subsetOf(itemset.items)) refPatterns(0).description.length else 0.0
+    override val featureCount: Int = refPatterns.length
+
+    override val featureLabels: IndexedSeq[String] = (0 until featureCount).map(f => s"DiscriminativeLength($f)")
+
+    override protected[feature] def storeFeaturesIn(itemset: Itemset, array: Array[Double], startIndex: Int) = {
+        (0 until featureCount).foreach { f =>
+            array(startIndex + f) = 
+                if (refPatterns(f).items.subsetOf(itemset.items)) refPatterns(f).description.length / scalingConstant else 0.0
+        }
     }
-    
 }
 

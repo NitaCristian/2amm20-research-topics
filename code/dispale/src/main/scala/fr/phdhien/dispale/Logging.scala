@@ -71,6 +71,8 @@ trait LearningLogging {
       //logger.info(f"$iteration%d;$i%d;${p.size}%d;${client.describe(p)}%s;${wg4ps.GetWeight(p)}%.6f;${learnedWeight(p)}%.6f;${p.sortedItems.mkString("+")}")
       logger.info(f"$iteration%d;$i%d;${p.size}%d;${client.describe(p)}%s;${GetWeight(p)}%.6f;${learnedWeight(p)}%.6f;${p.sortedItems.mkString("+")}")
     }
+    // learned weights after this iteration, used to evaluate the learned model offline
+    println(f"ITER_WEIGHTS;$iteration%d;" + (0 until learnedWeight.featureMap.featureCount).map(j => f"${learnedWeight.weights(j)}%.8f").mkString(";"))
   }
   protected final def getIterationOutcome(iteration: Int, query: Array[Itemset],
                                           learnedWeight: LogisticWeight): String = {
@@ -200,6 +202,8 @@ trait LearningLogging {
     logger.trace("\tFeature weights:")
     logger.trace(learnedWeight.featureMap.featureLabels.mkString(";"))
     logger.trace((0 until learnedWeight.featureMap.featureCount).map(j => f"${learnedWeight.weights(j)}%.6f").mkString(";"))
+    // final learned weights, used to evaluate the learned model offline
+    println("FINAL_WEIGHTS;" + (0 until learnedWeight.featureMap.featureCount).map(j => f"${learnedWeight.weights(j)}%.8f").mkString(";"))
     logger.info("###########################################\n")
     //logger.info("###########################################\n\n")
   }
