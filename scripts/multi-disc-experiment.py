@@ -4,6 +4,7 @@ improve the preference model learned by DiSPaLe?
 
   python3 scripts/multi-disc-experiment.py run  [--xp NAME]  # launch all runs (logs in results/xp-NAME)
   python3 scripts/multi-disc-experiment.py eval [--xp NAME]  # evaluate the learned models
+  python3 scripts/multi-disc-experiment.py variety [--xp NAME]  # how varied the shown patterns are
 
 Experiments (--xp):
   multidisc: number / selection of sub-patterns, with the original initial weights (1) and LIN aggregation
@@ -181,6 +182,58 @@ def parse_iter_weights(path):
     return weights
 
 
+def shown_queries(path):
+    # iteration -> list of item sets shown in that query
+    queries = {}
+    for line in open(path):
+        m = re.search(r"INFO  \w+ - (\d+);\d+;\d+;[^;]*;[^;]*;[^;]*;([\d+]+)\s*$", line)
+        if m:
+            queries.setdefault(int(m.group(1)), []).append(frozenset(map(int, m.group(2).split("+"))))
+    return queries
+
+
+def jaccard(a, b):
+    return len(a & b) / len(a | b) if a | b else 0.0
+
+
+def variety():
+    # Does sampling with the learned model narrow what is shown (a "bubble")?
+    # Over the last 10 iterations of each run:
+    #  - distinct items: how many different items appear in any shown pattern
+    #  - top-5 share: share of all item occurrences taken by the 5 most shown items
+    #  - similarity: mean Jaccard similarity between shown patterns (within and across queries)
+    # Iteration 1 is sampled uniformly in every run, so it is the "no model" reference.
+    for data, freq in DATASETS.items():
+        for k in QUERY_SIZES:
+            print(f"\n## {data}, k = {k}, last 10 iterations, mean over {len(SEEDS)} seeds")
+            print("config".ljust(20) + "distinct items".rjust(16) + "top-5 share".rjust(13) + "similarity".rjust(12) + "  (iteration 1: distinct, similarity)")
+            for config in CONFIGS:
+                rows, first = [], []
+                for seed in SEEDS:
+                    path = log_path(data, k, config, seed)
+                    if not os.path.exists(path):
+                        continue
+                    q = shown_queries(path)
+                    if not q:
+                        continue
+                    last = [p for it in sorted(q)[-10:] for p in q[it]]
+                    counts = {}
+                    for p in last:
+                        for i in p:
+                            counts[i] = counts.get(i, 0) + 1
+                    top5 = sum(sorted(counts.values(), reverse=True)[:5]) / sum(counts.values())
+                    sim = statistics.mean(jaccard(a, b) for a, b in itertools.combinations(last, 2))
+                    rows.append((len(counts), top5, sim))
+                    f = q[min(q)]
+                    first.append((len(set().union(*f)), statistics.mean(jaccard(a, b) for a, b in itertools.combinations(f, 2))))
+                if not rows:
+                    continue
+                mean = lambda v: statistics.mean(v)
+                print(config.ljust(20) + f"{mean([r[0] for r in rows]):.1f}".rjust(16) + f"{100 * mean([r[1] for r in rows]):.1f}%".rjust(13)
+                      + f"{mean([r[2] for r in rows]):.3f}".rjust(12)
+                      + f"  ({mean([f[0] for f in first]):.1f}, {mean([f[1] for f in first]):.3f})")
+
+
 def evaluate():
     for data, freq in DATASETS.items():
         test, truth = make_test_set(data, freq, TEST_SET_SIZE)
@@ -219,8 +272,8 @@ def evaluate():
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("action", choices=["run", "eval"])
+    parser.add_argument("action", choices=["run", "eval", "variety"])
     parser.add_argument("--xp", choices=list(EXPERIMENTS), default="multidisc")
     args = parser.parse_args()
     select_xp(args.xp)
-    run() if args.action == "run" else evaluate()
+    {"run": run, "eval": evaluate, "variety": variety}[args.action]()
