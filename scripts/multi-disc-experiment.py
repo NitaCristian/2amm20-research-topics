@@ -5,10 +5,12 @@ improve the preference model learned by DiSPaLe?
   python3 scripts/multi-disc-experiment.py run  [--xp NAME]  # launch all runs (logs in results/xp-NAME)
   python3 scripts/multi-disc-experiment.py eval [--xp NAME]  # evaluate the learned models
   python3 scripts/multi-disc-experiment.py variety [--xp NAME]  # how varied the shown patterns are
+  python3 scripts/multi-disc-experiment.py check-user           # can an items-only model learn the combination user?
 
 Experiments (--xp):
   multidisc: number / selection of sub-patterns, with the original initial weights (1) and LIN aggregation
   sampling:  original initial weights (1, LIN aggregation) vs initial weights 0 (ADD aggregation)
+  combo:     the two-combination user (ComboRanker) with every selection rule, plus a Gaussian-user control
 
 Evaluation: the weights learned after each iteration (ITER_WEIGHTS lines, Items features only)
 score a fixed test set of frequent itemsets that were never shown to the user; we measure
@@ -21,6 +23,7 @@ and the quality of the patterns shown to the user:
 
 import argparse
 import itertools
+import math
 import os
 import random
 import re
@@ -51,6 +54,24 @@ EXPERIMENTS = {
         "dispale-m3-comp-w0": ["-m", "dispale", "-nd", "3", "-sel", "complementary", "-iw", "0", "-ag", "ADD"],
     }),
 }
+COMBOS = "29,52;40,58"  # chess: two separate liked item pairs (see check-user)
+GAUSSIAN_WEIGHTS = os.path.join(ROOT, "results", "xp-combo", "gaussian-weights.txt")
+COMBO = ["-r", "ComboRanker", "-cb", COMBOS]
+GAUSS = ["-r", "GaussianRanker", "-w", GAUSSIAN_WEIGHTS]
+EXPERIMENTS["combo"] = ([10], {
+    "combo-letsip":      ["-m", "letsip"] + COMBO,
+    "combo-m1":          ["-m", "dispale", "-nd", "1"] + COMBO,
+    "combo-m3-top":      ["-m", "dispale", "-nd", "3", "-sel", "top"] + COMBO,
+    "combo-m3-mmr":      ["-m", "dispale", "-nd", "3", "-sel", "complementary"] + COMBO,
+    "combo-m3-coverage": ["-m", "dispale", "-nd", "3", "-sel", "coverage"] + COMBO,
+    "combo-m3-gain":     ["-m", "dispale", "-nd", "3", "-sel", "gain"] + COMBO,
+    "combo-m3-pairs":    ["-m", "dispale", "-nd", "3", "-sel", "pairs"] + COMBO,
+    "combo-m3-pooled":   ["-m", "dispale", "-nd", "3", "-sel", "gain", "-fx", "pooled"] + COMBO,
+    "gauss-letsip":      ["-m", "letsip"] + GAUSS,
+    "gauss-m1":          ["-m", "dispale", "-nd", "1"] + GAUSS,
+    "gauss-m3-mmr":      ["-m", "dispale", "-nd", "3", "-sel", "complementary"] + GAUSS,
+    "gauss-m3-gain":     ["-m", "dispale", "-nd", "3", "-sel", "gain"] + GAUSS,
+})
 XP_DIR, QUERY_SIZES, CONFIGS = None, None, None
 
 
@@ -84,7 +105,18 @@ def run_one(job):
     return f"done {out}"
 
 
+def make_gaussian_weights(n_items=76, seed=2026):
+    # fixed random item weights for the Gaussian control user (read by GaussianRanker via -w)
+    if os.path.exists(GAUSSIAN_WEIGHTS):
+        return
+    os.makedirs(os.path.dirname(GAUSSIAN_WEIGHTS), exist_ok=True)
+    rnd = random.Random(seed)
+    with open(GAUSSIAN_WEIGHTS, "w") as f:
+        f.write("\n".join(f"{rnd.gauss(0, 1):.6f}" for _ in range(n_items)) + "\n")
+
+
 def run():
+    make_gaussian_weights()
     jobs = [(d, f, k, c, s) for (d, f) in DATASETS.items() for k in QUERY_SIZES for c in CONFIGS for s in SEEDS]
     with ThreadPoolExecutor(PARALLEL) as ex:
         for i, msg in enumerate(ex.map(run_one, jobs), 1):
@@ -142,6 +174,28 @@ def make_test_set(data, freq, size, seed=12345):
             test.add(p)
     test = sorted(test, key=sorted)
     return test, [surprisingness(p, n, covers) for p in test]
+
+
+def parse_combos(spec):
+    combos = []
+    for part in filter(None, (x.strip() for x in spec.split(";"))):
+        items, _, w = part.partition(":")
+        combos.append((frozenset(int(i) for i in items.split(",")), float(w) if w else 1.0))
+    return combos
+
+
+def user_truth(args, data, test):
+    # ground-truth score of every test pattern for the simulated user a configuration runs with
+    n, covers = load_transactions(data)
+    user = args[args.index("-r") + 1] if "-r" in args else "SurprisingnessRanker"
+    surpr = [surprisingness(p, n, covers) for p in test]
+    if user == "ComboRanker":
+        combos = parse_combos(args[args.index("-cb") + 1] if "-cb" in args else COMBOS)
+        return "combo", [sum(w for S, w in combos if S <= p) + 0.01 * s for p, s in zip(test, surpr)]
+    if user == "GaussianRanker":
+        w = [float(x) for x in open(args[args.index("-w") + 1]) if x.strip()]
+        return "gaussian", [sum(w[i] for i in p) * support(p, covers) for p in test]
+    return "surprisingness", surpr
 
 
 def pairwise_accuracy(pred, truth):
@@ -236,16 +290,17 @@ def variety():
 
 def evaluate():
     for data, freq in DATASETS.items():
-        test, truth = make_test_set(data, freq, TEST_SET_SIZE)
-        print(f"\n### {data} (minfreq {freq}), test set: {len(test)} frequent itemsets, "
-              f"{sum(1 for t in truth if t > 0)} with surprisingness > 0")
+        test, _ = make_test_set(data, freq, TEST_SET_SIZE)
+        truths = {}
+        print(f"\n### {data} (minfreq {freq}), test set: {len(test)} frequent itemsets")
         for k in QUERY_SIZES:
             print(f"\n## k = {k}, {ITERATIONS} iterations, {len(SEEDS)} seeds (mean ± std)")
             checkpoints = sorted({0, 4, 9, ITERATIONS - 1})
             header = ("config".ljust(20) + "".join(f"acc@it{c + 1}".rjust(15) for c in checkpoints)
-                      + "P@10% final".rjust(16) + "shown surpr.".rjust(16))
+                      + "P@10% final".rjust(16) + "shown score".rjust(16) + "  user")
             print(header)
             for config in CONFIGS:
+                user, truth = user_truth(CONFIGS[config], data, test)
                 accs = {c: [] for c in checkpoints}
                 precs, shown = [], []
                 for seed in SEEDS:
@@ -267,13 +322,54 @@ def evaluate():
                                  if len(v) > 1 else (f"{100 * v[0]:.1f}" if v else "-"))
                 fmt3 = lambda v: f"{statistics.mean(v):.4f}±{statistics.stdev(v):.4f}" if len(v) > 1 else "-"
                 print(config.ljust(20) + "".join(fmt(accs[c]).rjust(15) for c in checkpoints) + fmt(precs).rjust(16)
-                      + fmt3(shown).rjust(16))
+                      + fmt3(shown).rjust(16) + "  " + user)
+
+
+def fit_pairwise(train, truth, features, steps=300000, lr=0.05, seed=0):
+    # offline pairwise logistic regression with SGD; features(p) -> set of active feature ids
+    rnd = random.Random(seed)
+    w = {}
+    data = [(features(p), y) for p, y in zip(train, truth)]
+    for _ in range(steps):
+        (fa, ya), (fb, yb) = rnd.sample(data, 2)
+        if ya == yb:
+            continue
+        if ya < yb:
+            fa, fb = fb, fa
+        d = sum(w.get(f, 0) for f in fa) - sum(w.get(f, 0) for f in fb)
+        g = 1 / (1 + math.exp(min(30, d)))
+        for f in fa - fb:
+            w[f] = w.get(f, 0) + lr * g
+        for f in fb - fa:
+            w[f] = w.get(f, 0) - lr * g
+    return lambda p: sum(w.get(f, 0) for f in features(p))
+
+
+def check_user():
+    # an items-only model should NOT be able to learn the combination user perfectly,
+    # while the same model plus one feature per combination should (that gap is what sub-patterns can close)
+    for data, freq in DATASETS.items():
+        test, _ = make_test_set(data, freq, TEST_SET_SIZE)
+        train, _ = make_test_set(data, freq, 2 * TEST_SET_SIZE, seed=999)
+        train = [p for p in train if p not in set(test)]
+        args = COMBO
+        _, t_test = user_truth(args, data, test)
+        _, t_train = user_truth(args, data, train)
+        combos = parse_combos(COMBOS)
+        print(f"\n### {data}: user {COMBOS}; patterns containing a combination: "
+              f"{sum(1 for p in test if any(S <= p for S, _ in combos))} of {len(test)}")
+        for name, feats in [("items only", lambda p: set(p)),
+                            ("items + combinations", lambda p: set(p) | {("c", j) for j, (S, _) in enumerate(combos) if S <= p})]:
+            model = fit_pairwise(train, t_train, feats)
+            pred = [model(p) for p in test]
+            print(f"{name:22s} pairwise accuracy {100 * pairwise_accuracy(pred, t_test):.1f}%   "
+                  f"P@10% {100 * precision_at(pred, t_test):.1f}%")
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("action", choices=["run", "eval", "variety"])
+    parser.add_argument("action", choices=["run", "eval", "variety", "check-user"])
     parser.add_argument("--xp", choices=list(EXPERIMENTS), default="multidisc")
     args = parser.parse_args()
     select_xp(args.xp)
-    {"run": run, "eval": evaluate, "variety": variety}[args.action]()
+    {"run": run, "eval": evaluate, "variety": variety, "check-user": check_user}[args.action]()

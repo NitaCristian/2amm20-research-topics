@@ -98,15 +98,11 @@ final class GaussianRanker(
         } else{
             //
             // read gaussian weights from file 
-            var i = 0
-            val loop = new Breaks;
+            // one weight per line; lines after the last item are ignored
+            // (the original `loop.break' had no enclosing `breakable' and crashed once every item had a weight)
             val bufferedSource = scala.io.Source.fromFile(weightsFile)
-            for (line <- bufferedSource.getLines()) {
-                val weight_str = line.replaceAll(" ", "").replaceAll("\n", "")
-                w(i) = weight_str.toDouble
-                i = i+1
-                if (i == dataset.attributes.size)
-                    loop.break;
+            bufferedSource.getLines().map(_.trim).filter(_.nonEmpty).take(dataset.attributes.size).zipWithIndex.foreach {
+                case (weight_str, i) => w(i) = weight_str.toDouble
             }
             bufferedSource.close()
         }
@@ -211,3 +207,48 @@ object SurprisingnessRanker {
 //############################################################################################################
 //############################################################################################################
 
+
+/*
+ * Simulated user whose taste is a few separate item combinations, e.g. "likes (A,B)" and,
+ * independently, "likes (C,D)":
+ *     score(X) = Σ_j weight_j · [S_j ⊆ X]  +  0.01 · surprisingness(X)
+ * The small surprisingness term only breaks ties between patterns with the same combinations.
+ * A linear model over items cannot represent this taste exactly (it needs "A and B together").
+ */
+final class ComboRanker(
+                            dataset: Dataset[Set[Int]],
+                            val combos: Array[(Set[Int], Double)]
+                        ) extends Ranker {
+
+    private val tieBreak = SurprisingnessRanker(dataset)
+
+    def score(itemset: Itemset): Double =
+        combos.map { case (s, w) => if (s.subsetOf(itemset.items)) w else 0.0 }.sum +
+            0.01 * tieBreak.surprisingness(itemset)
+
+    private val byScore = Ordering.by(score).reverse
+
+    override def rank(query: Array[Itemset]): Unit = scala.util.Sorting.quickSort(query)(byScore)
+
+    override def rank(query: Array[Itemset], featureMap: FeatureMap): Unit = scala.util.Sorting.quickSort(query)(byScore)
+
+    override def describe(itemset: Itemset): String = f"${score(itemset)}"
+
+    override def toString: String =
+        "ComboRanker(" + combos.map { case (s, w) => s.toSeq.sorted.mkString("{", ",", "}") + f":$w%.1f" }.mkString(" ") + ")"
+}
+
+object ComboRanker {
+    def apply(dataset: Dataset[Set[Int]], spec: String): ComboRanker = new ComboRanker(dataset, parse(spec))
+
+    // "29,52;40,58" (weight 1 each) or "29,52:1;40,58:1;9,40:-1" (item ids as in the .txt file)
+    def parse(spec: String): Array[(Set[Int], Double)] =
+        spec.split(";").map(_.trim).filter(_.nonEmpty).map { part =>
+            val (items, w) = part.split(":") match {
+                case Array(i, weight) => (i, weight.trim.toDouble)
+                case Array(i) => (i, 1.0)
+                case _ => throw new IllegalArgumentException(s"bad combination: $part")
+            }
+            (items.split(",").map(_.trim.toInt).toSet, w)
+        }
+}

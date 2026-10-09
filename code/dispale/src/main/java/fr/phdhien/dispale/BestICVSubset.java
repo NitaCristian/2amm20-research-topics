@@ -36,11 +36,9 @@ public class BestICVSubset {
 	
 	// multiple discriminant sub-patterns
 	// nbSubPatterns: maximum number of sub-patterns to select (m)
-	// selection: "top" (the m highest ICV) or "complementary" (greedy, penalising redundant sub-patterns)
-	// redundancyWeight: how strongly redundancy is penalised by the "complementary" selection (0 = same as "top")
+	// selector: the rule that picks them among the candidates (see SubPatternSelector)
 	public int nbSubPatterns = 1;
-	public String selection = "complementary";
-	public double redundancyWeight = 1.0;
+	public SubPatternSelector selector = new SubPatternSelector.Top();
 	public List<Candidate> candidates = new ArrayList<Candidate>();
 	public List<Candidate> selected = new ArrayList<Candidate>();
 	
@@ -91,10 +89,9 @@ public class BestICVSubset {
 		iter++;
 	}
 	
-	public void setSelection(int nbSubPatterns, String selection, double redundancyWeight) {
+	public void setSelection(int nbSubPatterns, SubPatternSelector selector) {
 		this.nbSubPatterns = Math.max(1, nbSubPatterns);
-		this.selection = selection.toLowerCase();
-		this.redundancyWeight = redundancyWeight;
+		this.selector = selector;
 	}
 	
 	public double avg(int[] ranks) {
@@ -280,26 +277,8 @@ public class BestICVSubset {
 		return Integer.compare(b.items.cardinality(), a.items.cardinality());
 	}
 	
-	private static double jaccard(BitSet a, BitSet b) {
-		BitSet inter = (BitSet) a.clone();
-		inter.and(b);
-		BitSet union = (BitSet) a.clone();
-		union.or(b);
-		return union.isEmpty() ? 0.0 : (double) inter.cardinality() / union.cardinality();
-	}
-	
-	// redundancy of a candidate w.r.t. an already selected sub-pattern:
-	// - same query patterns covered (it captures the same part of the ranking), or
-	// - same items (e.g. (A,B) vs (A,B,C))
-	public static double redundancy(Candidate c, Candidate s) {
-		return Math.max(jaccard(c.cover, s.cover), jaccard(c.items, s.items));
-	}
-	
-	// select up to `nbSubPatterns' sub-patterns among the candidates
-	// - "top": the highest ICV ones
-	// - "complementary": greedy, each step takes the candidate maximising
-	//       ICV * (1 - redundancyWeight * max redundancy with the already selected ones)
-	// the first selected sub-pattern is always the highest ICV one (same as the original DiSPaLe)
+	// select up to `nbSubPatterns' sub-patterns among the candidates with the configured rule;
+	// every rule starts with the highest-ICV candidate (the original DiSPaLe sub-pattern)
 	public void selectSubPatterns() {
 		selected.clear();
 		List<Candidate> sorted = new ArrayList<Candidate>(candidates);
@@ -310,33 +289,7 @@ public class BestICVSubset {
 			selected.add(new Candidate(new BitSet(), new BitSet(), 0.0));
 			return;
 		}
-		
-		if(selection.equals("top")) {
-			for(int i=0; i<sorted.size() && selected.size()<nbSubPatterns; i++)
-				selected.add(sorted.get(i));
-			return;
-		}
-		
-		selected.add(sorted.get(0));
-		while(selected.size() < nbSubPatterns) {
-			Candidate best = null;
-			double bestScore = 0;
-			for(Candidate c : sorted) {
-				if(selected.contains(c))
-					continue;
-				double maxRed = 0;
-				for(Candidate s : selected)
-					maxRed = Math.max(maxRed, redundancy(c, s));
-				double score = c.icv * (1 - redundancyWeight * maxRed);
-				if(score > bestScore) {
-					bestScore = score;
-					best = c;
-				}
-			}
-			if(best == null)
-				break; // every remaining candidate is fully redundant
-			selected.add(best);
-		}
+		selected.addAll(selector.select(sorted, nbSubPatterns, iter));
 	}
 	
 	public int getNbSelected() {

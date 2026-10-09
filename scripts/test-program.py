@@ -51,7 +51,7 @@ all_algo = hui_algo + sampling_algo
 #
 #--------------------------------------------------------
 #
-all_rank_functions = ["FrequencyRanker", "SurprisingnessRanker", "GaussianRanker"]
+all_rank_functions = ["FrequencyRanker", "SurprisingnessRanker", "GaussianRanker", "ComboRanker"]
 all_learners = ["scd", "SCD", "ranksvm", "ranksvm", "rank_svm", "rankSVM"]
 #
 #--------------------------------------------------------
@@ -62,7 +62,7 @@ features_abbrv = ["F", "I", "L", "T", "FI", "FL", "FT", "IL", "IT", "LT", "FIL",
 hui_features_abbrv = ["I", "IT"]
 #
 fUpdate = ["all", "ALL", "rnd", "RND"]
-disc_selection = ["top", "complementary"]
+disc_selection = ["top", "complementary", "mmr", "coverage", "gain", "pairs"]
 #
 #=====================================================================================
 #=====================================================================================
@@ -189,7 +189,12 @@ def get_argParser():
     #
     parser.add_argument("-s", "--seed", type=int, nargs="?", help="the the random seed")
     parser.add_argument("-nd", "--nb-disc", type=int, default=1, help=f"max number of discriminating sub-patterns used per iteration by {disc_methods} (default: 1, the original DiSPaLe)")
-    parser.add_argument("-sel", "--selection", type=str, default="complementary", choices=disc_selection, help="how the discriminating sub-patterns are selected: the `top' ICV ones, or `complementary' ones (high ICV, low redundancy)")
+    parser.add_argument("-sel", "--selection", type=str, default="gain", choices=disc_selection, help="how the discriminating sub-patterns are selected: `top' (highest ICV), `complementary'/`mmr' (ICV discounted by Jaccard redundancy), `coverage' (skip sub-patterns whose covers are correlated), `gain' (partition gain, default) or `pairs' (pair coverage)")
+    parser.add_argument("-mo", "--max-overlap", type=float, default=0.5, help="coverage selection: max |correlation| between the covers of two selected sub-patterns")
+    parser.add_argument("-mg", "--min-gain", type=float, default=0.0, help="gain / pairs selection: stop when the gain is at most this share of the total, in [0, 1]")
+    parser.add_argument("-fx", "--expansion", type=str, default="separate", choices=["separate", "pooled"], help="discriminating features: one per sub-pattern (separate) or one for all (pooled)")
+    parser.add_argument("-tn", "--transfer-norm", type=str, default="m", choices=["m", "none"], help="divide the transferred sub-pattern weights by m, or not")
+    parser.add_argument("-cb", "--combos", type=str, default="29,52;40,58", help="ComboRanker taste: item combinations with optional weights, e.g. '29,52;40,58' or '29,52:1;9,40:-1' (default for chess)")
     parser.add_argument("-iw", "--init-weight", type=float, default=None, help="initial weight of every feature (default: 0 for letsip and dispale, 1 for lutom and lutomDisc). The original code used 1, which saturates the logistic weight function and makes the sampling almost uniform")
     parser.add_argument("-rw", "--redundancy-weight", type=float, default=1.0, help="redundancy penalty of the complementary selection, in [0, 1] (0 = same as top)")
     #
@@ -228,6 +233,7 @@ def parse_parameters():
     selection:str = params.selection
     redundancyWeight:float = params.redundancy_weight
     initWeight = params.init_weight
+    extra = (params.max_overlap, params.min_gain, params.expansion, params.transfer_norm, params.combos)
     #
     #-------------------------------------------------------------------
     #
@@ -257,7 +263,7 @@ def parse_parameters():
     #
     parameters = (method, data, freq, feats, oracle.lower(), algo.lower(), learner.lower(), rankFunction, nbIter, )
     parameters += (queryK, queryRetention, eta, aggreg, featsUpdate, tilt, weightsFile, rndSeed, timeout)
-    parameters += (nbDisc, selection, redundancyWeight, initWeight)
+    parameters += (nbDisc, selection, redundancyWeight, initWeight, extra)
     
     print(f"\n\n{parameters}\n\n")
     print("~~~~~~~~~~~~~~~~~~~~~~\n")
@@ -280,7 +286,8 @@ def get_arguments():
     parameters = parse_parameters()
     (method, dataname, freq, feats, oracle, algo, learner, ranker, nbIter) = parameters[:9]
     (queryK, queryR, eta, aggreg, featsUpdate, tilt, weightsFile, rndSeed, timeout) = parameters[9:18]
-    (nbDisc, selection, redundancyWeight, initWeight) = parameters[18:22]
+    (nbDisc, selection, redundancyWeight, initWeight, extra) = parameters[18:23]
+    (maxOverlap, minGain, expansion, transferNorm, combos) = extra
     #
     #-------------------------------------------------------------------
     #
@@ -298,7 +305,9 @@ def get_arguments():
     arguments = f"-m {method} -o {oracle} -a {algo} -F {feats} -r {ranker} -k {queryK} -f {minsup} -i {nbIter} "
     arguments += f"-le {learner} -ag {aggreg} -e {eta} -t {tilt} -l {queryR} -FU {featsUpdate} -s {rndSeed} "
     arguments += f"-d {data_file_cp4im} -FI {data_file_fimi} "
-    arguments += f"-nd {nbDisc} -sel {selection} -rw {redundancyWeight}"
+    arguments += f"-nd {nbDisc} -sel {selection} -rw {redundancyWeight} -mo {maxOverlap} -mg {minGain} -fx {expansion} -tn {transferNorm}"
+    if ranker == "ComboRanker":
+        arguments += f" -cb '{combos}'"
     if initWeight is not None:
         arguments += f" -iw {initWeight}"
     #
