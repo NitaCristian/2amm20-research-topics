@@ -195,6 +195,10 @@ object ParseArgs {
         val transferNorm: Option = new Option("tn", "transfer-norm", true, msg)
         all_options.addOption(transferNorm)
 
+        msg = "clue features of earlier pairs: none (original, set to 0) | full (computed from their patterns). Default Value : none \n\n"
+        val clueHistory: Option = new Option("ch", "clue-history", true, msg)
+        all_options.addOption(clueHistory)
+
         msg = "ComboRanker taste: item combinations with optional weights, e.g. 29,52;40,58 or 29,52:1;9,40:-1 \n\n"
         val combos: Option = new Option("cb", "combos", true, msg)
         all_options.addOption(combos)

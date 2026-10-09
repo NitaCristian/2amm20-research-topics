@@ -461,11 +461,19 @@ class Dispale(
         all_w = new_w
         
         // ********************** Update all patterns description by adding the new elements ******************
+        // clueHistory "none" (original): pairs of earlier iterations get 0 for the new features, so only the
+        //   current query informs the sub-pattern weights
+        // clueHistory "full": recompute the new features for the patterns of earlier iterations too, so the
+        //   sub-pattern weights are learned from every pair collected so far
         if(currentIteration>0){
-            (0 until (currentIteration * params.pairsPerQuery)).foreach {
-                i => {
-                        trainingPairs(i).update_pairs_new(featureMap.featureCount, 1)
-                    }
+            val fullHistory = multi.clueHistory.toLowerCase == "full"
+            (0 until (currentIteration * params.pairsPerQuery)).foreach { i =>
+                if(fullHistory) {
+                    val old = trainingPairs(i)
+                    trainingPairs(i) = new RankedPair(old.preferred, old.dispreferred, featureMap)
+                }
+                else
+                    trainingPairs(i).update_pairs_new(featureMap.featureCount, 1)
             }
         }
     }

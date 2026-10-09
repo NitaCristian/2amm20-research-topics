@@ -154,7 +154,8 @@ class MethodSelector{
                 maxOverlap = opt("max-overlap", "0.5").toDouble,
                 minGain = opt("min-gain", "0").toDouble,
                 expansion = opt("expansion", "separate").toLowerCase,
-                transferNorm = opt("transfer-norm", "m").toLowerCase
+                transferNorm = opt("transfer-norm", "m").toLowerCase,
+                clueHistory = opt("clue-history", "none").toLowerCase
             )
             val combos = opt("combos", "")
             // initial weights: 0 for the sampling methods (the learned score w.x starts at 0, i.e. uniform sampling,

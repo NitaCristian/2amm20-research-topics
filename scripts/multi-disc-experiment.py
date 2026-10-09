@@ -6,11 +6,13 @@ improve the preference model learned by DiSPaLe?
   python3 scripts/multi-disc-experiment.py eval [--xp NAME]  # evaluate the learned models
   python3 scripts/multi-disc-experiment.py variety [--xp NAME]  # how varied the shown patterns are
   python3 scripts/multi-disc-experiment.py check-user           # can an items-only model learn the combination user?
+  python3 scripts/multi-disc-experiment.py prefold [--xp NAME]  # evaluate the model before the clues are folded
 
 Experiments (--xp):
   multidisc: number / selection of sub-patterns, with the original initial weights (1) and LIN aggregation
   sampling:  original initial weights (1, LIN aggregation) vs initial weights 0 (ADD aggregation)
   combo:     the two-combination user (ComboRanker) with every selection rule, plus a Gaussian-user control
+  history:   the two-combination user with clue features computed for all earlier pairs (-ch full)
 
 Evaluation: the weights learned after each iteration (ITER_WEIGHTS lines, Items features only)
 score a fixed test set of frequent itemsets that were never shown to the user; we measure
@@ -71,6 +73,17 @@ EXPERIMENTS["combo"] = ([10], {
     "gauss-m1":          ["-m", "dispale", "-nd", "1"] + GAUSS,
     "gauss-m3-mmr":      ["-m", "dispale", "-nd", "3", "-sel", "complementary"] + GAUSS,
     "gauss-m3-gain":     ["-m", "dispale", "-nd", "3", "-sel", "gain"] + GAUSS,
+})
+FULL = ["-ch", "full"]
+EXPERIMENTS["history"] = ([10], {
+    "combo-letsip":         ["-m", "letsip"] + COMBO,
+    "combo-m1":             ["-m", "dispale", "-nd", "1"] + COMBO,
+    "combo-m3-gain":        ["-m", "dispale", "-nd", "3", "-sel", "gain"] + COMBO,
+    "combo-m1-full":        ["-m", "dispale", "-nd", "1"] + COMBO + FULL,
+    "combo-m3-top-full":    ["-m", "dispale", "-nd", "3", "-sel", "top"] + COMBO + FULL,
+    "combo-m3-mmr-full":    ["-m", "dispale", "-nd", "3", "-sel", "complementary"] + COMBO + FULL,
+    "combo-m3-gain-full":   ["-m", "dispale", "-nd", "3", "-sel", "gain"] + COMBO + FULL,
+    "combo-m3-pairs-full":  ["-m", "dispale", "-nd", "3", "-sel", "pairs"] + COMBO + FULL,
 })
 XP_DIR, QUERY_SIZES, CONFIGS = None, None, None
 
@@ -325,6 +338,63 @@ def evaluate():
                       + fmt3(shown).rjust(16) + "  " + user)
 
 
+def parse_prefold(path):
+    # iteration -> (weights right after learning, clues of that iteration); the weights are the SCD
+    # "**it+w;w;..." line: base features first, then one weight per clue (one in total when pooled)
+    weights, clues = {}, {}
+    for line in open(path):
+        m = re.match(r"\*\*(\d+)\+(.*)", line)
+        if m:
+            weights[int(m.group(1))] = [float(x) for x in m.group(2).split(";") if x.strip()]
+        if line.startswith("++"):
+            m = re.match(r"\+\+(\d+)-(\d+)-Set\(([^)]*)\)", line)
+            if m:
+                clues.setdefault(int(m.group(1)), []).append(frozenset(int(i) for i in m.group(3).split(",") if i.strip()))
+    return {it: (weights[it], clues.get(it, [])) for it in weights}
+
+
+def prefold_scores(test, w, clues, pooled, n_base=76):
+    # score = item weights + the clue weights of that iteration (what the learner knew before folding)
+    base = [sum(w[i] for i in p) for p in test]
+    if not clues:
+        return base
+    if pooled:
+        v = w[n_base]
+        return [b + v * sum(1 for S in clues if S <= p) / len(clues) for b, p in zip(base, test)]
+    return [b + sum(w[n_base + j] for j, S in enumerate(clues) if S <= p) for b, p in zip(base, test)]
+
+
+def prefold():
+    for data, freq in DATASETS.items():
+        test, _ = make_test_set(data, freq, TEST_SET_SIZE)
+        for k in QUERY_SIZES:
+            print(f"\n## {data}, k = {k}: model after folding (item weights only) vs before folding "
+                  f"(item weights + that iteration's clue weights), {len(SEEDS)} seeds")
+            print("config".ljust(20) + "after acc@it20".rjust(16) + "before acc@it20".rjust(17)
+                  + "after P@10%".rjust(13) + "before P@10%".rjust(14) + "  user")
+            for config in CONFIGS:
+                user, truth = user_truth(CONFIGS[config], data, test)
+                pooled = "pooled" in CONFIGS[config]
+                after, before, p_after, p_before = [], [], [], []
+                for seed in SEEDS:
+                    path = log_path(data, k, config, seed)
+                    if not os.path.exists(path):
+                        continue
+                    final = parse_iter_weights(path).get(ITERATIONS - 1)
+                    pre = parse_prefold(path).get(ITERATIONS - 1)
+                    if final is None or pre is None:
+                        continue
+                    a = [sum(final[i] for i in p) for p in test]
+                    b = prefold_scores(test, pre[0], pre[1], pooled)
+                    after.append(pairwise_accuracy(a, truth)); before.append(pairwise_accuracy(b, truth))
+                    p_after.append(precision_at(a, truth)); p_before.append(precision_at(b, truth))
+                if not after:
+                    continue
+                f = lambda v: f"{100 * statistics.mean(v):.1f}±{100 * statistics.stdev(v):.1f}"
+                print(config.ljust(20) + f(after).rjust(16) + f(before).rjust(17) + f(p_after).rjust(13)
+                      + f(p_before).rjust(14) + "  " + user)
+
+
 def fit_pairwise(train, truth, features, steps=300000, lr=0.05, seed=0):
     # offline pairwise logistic regression with SGD; features(p) -> set of active feature ids
     rnd = random.Random(seed)
@@ -368,8 +438,8 @@ def check_user():
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("action", choices=["run", "eval", "variety", "check-user"])
+    parser.add_argument("action", choices=["run", "eval", "variety", "check-user", "prefold"])
     parser.add_argument("--xp", choices=list(EXPERIMENTS), default="multidisc")
     args = parser.parse_args()
     select_xp(args.xp)
-    {"run": run, "eval": evaluate, "variety": variety, "check-user": check_user}[args.action]()
+    {"run": run, "eval": evaluate, "variety": variety, "check-user": check_user, "prefold": prefold}[args.action]()
