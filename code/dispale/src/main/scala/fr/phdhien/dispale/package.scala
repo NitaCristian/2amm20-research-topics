@@ -69,7 +69,8 @@ package object dispale {
                                     maxOverlap: Double = 0.5,          // coverage: max |correlation| between covers
                                     minGain: Double = 0.0,             // gain / pairs: stop below this share of the total
                                     expansion: String = "separate",    // separate: features per sub-pattern | pooled
-                                    transferNorm: String = "m"         // divide the transferred weights by m | none
+                                    transferNorm: String = "m",        // divide the transferred weights by m | none
+                                    clueHistory: String = "none"       // none: earlier pairs get 0 for new clues | full
                                 )
 
     //############################################################################################################
