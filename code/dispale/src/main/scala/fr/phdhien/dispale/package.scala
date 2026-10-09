@@ -61,6 +61,20 @@ package object dispale {
     //############################################################################################################
     //############################################################################################################
 
+    // settings of the multi sub-pattern extension of DiSPaLe
+    final case class MultiDiscParams(
+                                    nbSubPatterns: Int = 1,            // m: max sub-patterns per iteration (1 = DiSPaLe)
+                                    selection: String = "gain",        // top | complementary | coverage | gain | pairs
+                                    redundancyWeight: Double = 1.0,    // complementary: redundancy penalty, 0..1
+                                    maxOverlap: Double = 0.5,          // coverage: max |correlation| between covers
+                                    minGain: Double = 0.0,             // gain / pairs: stop below this share of the total
+                                    expansion: String = "separate",    // separate: features per sub-pattern | pooled
+                                    transferNorm: String = "m"         // divide the transferred weights by m | none
+                                )
+
+    //############################################################################################################
+    //############################################################################################################
+
     final case class Parameters(
                                     querySize: Int = 3,
                                     queryRetention: Int = 0,
