@@ -1,0 +1,152 @@
+% Worked example. Packages: booktabs, amsmath. Source: docs/EXAMPLES.txt, produced by
+%   python3 scripts/worked-example.py results/xp-main/soybean/taste1/m3-gain/seed3.trace.jsonl -it 0 1 2 --liked "29,37;33,45"
+% Iteration t here is iteration t-1 in the trace.
+
+\subsection{Worked Example}
+\label{subsec:worked_example}
+
+We follow the first three iterations of one run: soybean, a combination user who likes the item pairs
+$\{29, 37\}$ (\texttt{stem\_cankers=absent}, \texttt{external\_decay=absent}) and $\{33, 45\}$
+(\texttt{canker\_lesion=dna}, \texttt{sclerotia=absent}), query size $k = 10$, $m = 3$ selected with
+\textsc{PartitionGain}, and the published folding scheme. Ranks go from $0$ (preferred) to $9$, so
+$\mu = 4.5$ and $\mathrm{TSS} = \sum_{r=0}^{9} (r - 4.5)^2 = 82.5$.
+
+\paragraph{Iteration 1: query and ranking.}
+Table~\ref{tab:ex_query1} shows the ten sampled patterns in the order the user ranked them. Since all
+weights start at $1$, the model score $w \cdot x$ of a pattern is its length. The user puts the three patterns
+containing $\{33, 45\}$ first (score $1$ plus the small surprisingness tie-break); the others are ordered by
+surprisingness alone.
+
+\begin{table}[t]
+\centering
+\caption{Iteration 1: the query, ranked by the user. \#: position in the sampled order.}
+\label{tab:ex_query1}
+\small
+\begin{tabular}{rrlrr}
+\toprule
+Rank & \# & Pattern & $w \cdot x$ & User score \\
+\midrule
+0 & 3 & $\{8,11,27,29,\mathbf{33},40,42,\mathbf{45}\}$ & 8 & 1.0008 \\
+1 & 6 & $\{19,\mathbf{33},42,\mathbf{45},47\}$          & 5 & 1.0003 \\
+2 & 7 & $\{7,13,18,27,\mathbf{33},\mathbf{45}\}$        & 6 & 1.0002 \\
+3 & 5 & $\{11,26,28,32,40\}$                            & 5 & 0.0012 \\
+4 & 4 & $\{11,13,28,35,40,42,45\}$                      & 7 & 0.0007 \\
+5 & 1 & $\{4,7,23,26,40,45\}$                           & 6 & 0.0004 \\
+6 & 9 & $\{10,20,35,40,42\}$                            & 5 & 0.0003 \\
+7 & 8 & $\{11,13,23,26,34,40,47\}$                      & 7 & 0.0003 \\
+8 & 2 & $\{14,18,27,37,40,42,47\}$                      & 7 & 0.0003 \\
+9 & 0 & $\{7,11,23,32,37,40,45\}$                       & 7 & 0.0000 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{Iteration 1: ICV.}
+Among the sub-itemsets of the query, $39$ distinct covers have a positive ICV. The highest is that of the liked
+pair $Y = \{33, 45\}$, contained in the patterns of ranks $0, 1, 2$:
+\begin{equation*}
+  \bar{r}_{C_Y} = \tfrac{0+1+2}{3} = 1, \qquad
+  \bar{r}_{\overline{C}_Y} = \tfrac{3+4+\dots+9}{7} = 6, \qquad
+  \mathrm{ICV}(Y) = 3\,(4.5 - 1)^2 + 7\,(4.5 - 6)^2 = 36.75 + 15.75 = 52.5 .
+\end{equation*}
+The next candidates are $\{33, 42, 45\}$ (ranks $0, 1$; ICV $40.0$), $\{37, 40\}$ (ranks $8, 9$; ICV $40.0$) and
+$\{42, 45\}$ (ranks $0, 1, 4$; ICV $34.4$).
+
+\paragraph{Iteration 1: partition gain.}
+\textsc{PartitionGain} starts from $\{33, 45\}$, so $\mathrm{PICV} = 52.5$, and then adds the candidate that
+most refines the partition of the ranks (Table~\ref{tab:ex_gain1}). $\{33, 42, 45\}$ has the second-highest ICV
+but adds nothing: its cover $\{0, 1\}$ lies inside that of $\{33, 45\}$ and only splits the preferred group
+further, whereas $\{37, 40\}$ separates the two least preferred patterns. In step 2, $\{37, 40\}$ and
+$\{11, 28, 40\}$ tie with a gain of $17.5$; the tie goes to the higher ICV.
+
+\begin{table}[t]
+\centering
+\caption{Iteration 1: greedy partition gain (best candidates per step; selected in bold).}
+\label{tab:ex_gain1}
+\small
+\begin{tabular}{clcccc}
+\toprule
+Step & Candidate & Ranks covered & ICV & PICV & Gain \\
+\midrule
+1 & $\mathbf{\{33,45\}}$     & 0, 1, 2 & 52.5 & 52.5 & -- \\
+\midrule
+2 & $\mathbf{\{37,40\}}$     & 8, 9    & 40.0 & 70.0 & +17.5 \\
+  & $\{11,28,40\}$           & 3, 4    & 2.5  & 70.0 & +17.5 \\
+  & $\{11,23,40\}$           & 7, 9    &      & 63.7 & +11.2 \\
+\midrule
+3 & $\mathbf{\{11,28,40\}}$  & 3, 4    & 2.5  & 77.5 & +7.5 \\
+  & $\{11,23,40\}$           & 7, 9    &      & 75.5 & +5.5 \\
+  & $\{40,47\}$              & 7, 8    &      & 75.5 & +5.5 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The selected set partitions the query into four groups (Table~\ref{tab:ex_partition1}), which explain
+$77.5$ of the $82.5$ total: the preferred patterns, the two least preferred ones, ranks $3$--$4$, and the
+remaining ranks $5$--$7$.
+
+\begin{table}[t]
+\centering
+\caption{Iteration 1: final partition. Signature: which of $\{33,45\}$, $\{37,40\}$, $\{11,28,40\}$ the
+pattern contains.}
+\label{tab:ex_partition1}
+\small
+\begin{tabular}{cccc}
+\toprule
+Signature & Ranks & Mean rank & $n_g (\mu - \bar{r}_g)^2$ \\
+\midrule
+100 & 0, 1, 2 & 1.0 & 36.75 \\
+010 & 8, 9    & 8.5 & 32.00 \\
+001 & 3, 4    & 3.5 & 2.00 \\
+000 & 5, 6, 7 & 6.0 & 6.75 \\
+\midrule
+    &         &     & $\mathrm{PICV} = 77.5$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{Iterations 2 and 3.}
+Table~\ref{tab:ex_iter23} summarises the next two iterations. The model scores are no longer equal to the
+pattern lengths, since the learned weights now drive the sampler. In both queries the user's other liked pair,
+$\{29, 37\}$, is the highest-ICV sub-pattern ($52.5$ and $40.0$). The other selected sub-patterns
+are chosen for the groups they separate, not for their own ICV. In iteration 2, $\{45\}$ (ICV $9.6$) is added
+before candidates with a far higher ICV, such as $\{26, 29, 37, 45\}$ (ICV $40.0$), which only splits the
+preferred group again. Its gain of $19.0$ comes from separating ranks $5$--$9$ from ranks $3$--$4$. In step 3,
+$\{40\}$ and $\{11\}$ tie: their covers are complementary, so they induce the same partition and have the same
+ICV and length. The program keeps the one found first.
+
+\begin{table}[t]
+\centering
+\caption{Iterations 2 and 3: ranked queries (liked pair in bold) and selected sub-patterns.}
+\label{tab:ex_iter23}
+\small
+\begin{tabular}{rlrr@{\hskip 2em}rlrr}
+\toprule
+\multicolumn{4}{c}{Iteration 2} & \multicolumn{4}{c}{Iteration 3} \\
+\cmidrule(r){1-4} \cmidrule(l){5-8}
+Rank & Pattern & $w\cdot x$ & Score & Rank & Pattern & $w\cdot x$ & Score \\
+\midrule
+0 & $\{8,21,26,27,\mathbf{29},\mathbf{37},40,45\}$ & 6.99 & 1.0003 & 0 & $\{8,18,26,27,\mathbf{29},\mathbf{37}\}$ & 5.42 & 1.0004 \\
+1 & $\{7,11,14,26,\mathbf{29},\mathbf{37},45\}$    & 5.40 & 1.0002 & 1 & $\{4,23,\mathbf{29},\mathbf{37}\}$       & 2.89 & 1.0004 \\
+2 & $\{10,13,\mathbf{29},\mathbf{37},40,42,47\}$   & 5.63 & 1.0002 & 2 & $\{20,24,26,35\}$                      & 3.66 & 0.0012 \\
+3 & $\{8,40,42,48\}$                               & 4.03 & 0.0007 & 3 & $\{11,23,33,37,40\}$                   & 3.76 & 0.0010 \\
+4 & $\{11,23,32\}$                                 & 1.72 & 0.0005 & 4 & $\{23,26,32,35,42,47\}$                & 4.84 & 0.0005 \\
+5 & $\{19,26,38,40,42,45,47\}$                     & 6.97 & 0.0003 & 5 & $\{11,14,23,26,28,38,40,47\}$          & 5.61 & 0.0004 \\
+6 & $\{3,8,24,26,28,40,45\}$                       & 7.25 & 0.0003 & 6 & $\{7,13,22,26,33,37,40,42,47\}$        & 8.32 & 0.0004 \\
+7 & $\{7,16,20,23,40,42,45\}$                      & 5.78 & 0.0002 & 7 & $\{7,33,42\}$                          & 4.36 & 0.0003 \\
+8 & $\{5,11,23,26,28,45\}$                         & 4.84 & 0.0000 & 8 & $\{14,17,23,33,40\}$                   & 4.41 & 0.0001 \\
+9 & $\{7,11,13,35,45\}$                            & 4.21 & 0.0000 & 9 & $\{11,13,18,26,27,37\}$                & 3.94 & 0.0001 \\
+\midrule
+\multicolumn{4}{l}{Selected (ICV; PICV after adding):} & \multicolumn{4}{l}{Selected (ICV; PICV after adding):} \\
+\multicolumn{4}{l}{$\{29,37\}$ ($52.5$; $52.5$), $\{45\}$ ($9.6$; $71.5$), $\{11\}$ ($6.7$; $80.0$)} &
+\multicolumn{4}{l}{$\{29,37\}$ ($40.0$; $40.0$), $\{26,35\}$ ($5.6$; $56.7$), $\{11,23,40\}$ ($0.6$; $73.0$)} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{What happens next.}
+With folding, the weights learned for these sub-patterns are transferred to their items and the sub-pattern
+features are removed, so the preference for $29$ and $37$ \emph{together} is lost and the pair has to be
+rediscovered in later queries. With \texttt{keep}, $\{29, 37\}$ and $\{33, 45\}$ stay in the model as features.
+In the keep run with the same seed, the weight of $\{29, 37\}$ grows from $0.26$ after iteration 2 to $1.16$
+after iteration 20, the largest of the $47$ kept sub-patterns, and that of $\{33, 45\}$ from $0$ to $0.72$
+(Section~\ref{subsec:keep_results}).

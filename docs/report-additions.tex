@@ -1,0 +1,216 @@
+% =====================================================================================================
+% Additions for current-report.tex. Each block says where it goes. Numbers of the running example come
+% from results/xp-main/soybean/taste1/m3-gain/seed3.trace.jsonl (iteration 1 = trace iteration 0) and
+% the keep run with the same seed; ICV and partition gains are re-verified by scripts/worked-example.py.
+% =====================================================================================================
+
+
+% -----------------------------------------------------------------------------------------------------
+% (A) ABSTRACT: inside \begin{abstract} ... \end{abstract}
+% -----------------------------------------------------------------------------------------------------
+Interactive pattern mining learns a user's preferences from rankings of a few patterns at a time.
+\textsc{DiSPaLe} captures interactions between items by adding, at every iteration, the sub-pattern that best
+discriminates the user's ranking as a temporary feature, whose learned weight is then folded into the item
+weights. We study whether selecting several complementary discriminant sub-patterns per iteration improves
+the learned preferences. We extend \textsc{DiSPaLe} with five selection rules, including a partition-gain
+criterion that rewards sub-patterns separating groups the others cannot, and introduce a simulated user whose
+preference consists of independent item combinations. We also correct six errors in the published
+implementation and verify that undoing them reproduces it exactly. On three datasets, no selection rule
+improves the model as long as the sub-pattern features are folded into item weights, since the folded model
+cannot represent combinations of items. Keeping the selected sub-patterns as permanent features improves the
+learned model significantly, and selecting several of them per iteration adds a further, smaller gain at no
+measurable cost.
+
+
+% -----------------------------------------------------------------------------------------------------
+% (B) PRELIMINARIES: after the first sentence of the section ("...shown in Algorithm~1.")
+% -----------------------------------------------------------------------------------------------------
+\textsc{DiSPaLe} builds on LetSIP~\cite{…}, which follows the same loop with the base features only, and
+samples each query with Flexics~\cite{…}, which draws frequent patterns with probability proportional to
+the current ranking function.
+
+
+% -----------------------------------------------------------------------------------------------------
+% (C) CORRECTIONS: replace the whole paragraph "Corrections to the interaction loop." with this one
+% -----------------------------------------------------------------------------------------------------
+\paragraph{Corrections to the interaction loop.}
+While re-implementing the extension we found that the publicly available \textsc{DiSPaLe} code does not
+execute Algorithm~\ref{alg:dispale} as written. First, the ranking function learned at the end of each
+iteration (line~11) was assigned to a local variable that went out of scope, so every query $\mathcal X^t$ was
+drawn with the initial weights $w_F^0$ instead of $\phi^{t-1}$: the learned model never influenced which
+patterns were shown to the user. We pass $\phi^t$ to the next call of \textsc{SamplePatterns}; the sampler
+itself (Flexics) is unchanged and only receives different weights. Second, \textsc{LearnWeights} resumed
+SCD from the inner products $w \cdot x$ of the previous iteration, although the dynamic features had been added
+and the weights folded since they were computed, so its gradients were wrong from the second iteration on; we
+recompute them. Third, \textsc{UpdateWeights} read the learned dynamic weight at the index given by the number
+of feature \emph{types} instead of after the base features, and therefore folded the weight of an unrelated
+item (item~$1$) instead of that of the sub-pattern. Finally, the code initialises all weights to $1$, not to $w_F^0 = 0$ as
+stated in the paper (line~5). With binary item features, the initial score of a pattern is then its length.
+We keep this initialisation, since starting from $0$ performs clearly worse (Section~\ref{subsec:fidelity}).
+
+% and add at the end of "Corrections to the sub-pattern search.":
+Each of the six corrections can be undone individually. With all of them undone, our implementation
+reproduces a run of the published code exactly: the same queries, the same sub-patterns and the same learned
+weights at every iteration. Smaller fixes that do not affect our setting (an item index that is wrong when
+items are not the first feature type, stored pairs that could only grow by one feature, and two launcher
+options) are documented with the code.
+
+
+% -----------------------------------------------------------------------------------------------------
+% (D) MINING: replace "The simplest rule, \emph{Top-$m$}, returns ... add no information." with this
+% -----------------------------------------------------------------------------------------------------
+Sub-itemsets with the same cover in the query split it in exactly the same way, so they would give the learner
+the same feature several times; we therefore keep one candidate per distinct cover, the longest (then the first
+found). The first candidate is, by construction, the sub-pattern that the original top-1 rule returns, and our
+implementation checks this at every iteration. The simplest rule, \emph{Top-$m$}, returns the $m$
+highest-ICV candidates. Even with distinct covers, it ignores how the candidates relate to one another: a
+second sub-pattern whose cover lies inside that of the first only splits the same group again.
+
+% and in the paragraph after Algorithm~\ref{alg:partition}, after "greedily adds the candidate with the largest
+% gain in PICV", insert:
+(ties go to the candidate with the higher ICV)
+
+
+% -----------------------------------------------------------------------------------------------------
+% (E) FEATURE EXPANSION: title, and one sentence at the end of Option 1's first paragraph
+% -----------------------------------------------------------------------------------------------------
+\subsection{Feature Vector Expansion with Multiple Sub-patterns}
+% ...
+As in \textsc{DiSPaLe}, the frequency and length descriptors are only added when the base features include
+frequency and length; in our experiments the base features are the items, so each sub-pattern contributes its
+presence descriptor only.
+
+
+% -----------------------------------------------------------------------------------------------------
+% (F) NEW SUBSECTION: after "Weight Updates under Option 2", before \section{Experimental Evaluation}
+% -----------------------------------------------------------------------------------------------------
+\subsection{Keeping the Sub-patterns}
+\label{subsec:keep}
+Folding returns a model over item weights only, which cannot represent a preference for items
+\emph{together}, however well the sub-patterns are chosen. We therefore also consider keeping them: every
+sub-pattern selected at some iteration becomes a permanent presence feature and is never folded. After
+iteration $t$, with $\mathcal K^t$ the set of sub-patterns selected so far, the ranking function is
+\begin{equation}\label{eq:keep}
+  \phi^t(X) = \phi_{\mathrm{logistic}}\Big(\sum_{i \in X} w_i + \sum_{S \in \mathcal K^t} w_S\,[S \subseteq X],\ A\Big).
+\end{equation}
+A newly selected sub-pattern starts with weight $0$, all collected pairs are described with the current
+features, and \textsc{LearnWeights} learns the item and sub-pattern weights together; \textsc{UpdateWeights}
+is skipped. The sampler uses the full model. The feature space grows by at most $m$ per iteration ($47$ kept
+sub-patterns after $20$ iterations in the run of Example~\ref{…}).
+
+
+% -----------------------------------------------------------------------------------------------------
+% (G) SETUP: add to the first paragraph
+% -----------------------------------------------------------------------------------------------------
+As in the published code, SCD performs one sweep over the features per iteration; we also test ten sweeps
+(\emph{10sw}). LetSIP is \textsc{DiSPaLe} without dynamic features. A folded model is evaluated on its item
+weights, a kept model on its item and sub-pattern weights (Eq.~\eqref{eq:keep}).
+
+
+% -----------------------------------------------------------------------------------------------------
+% (H) CONCLUSIONS: last paragraph
+% -----------------------------------------------------------------------------------------------------
+Future work should test the keep scheme with real users and with preferences that do not consist of item
+pairs, limit the growth of the kept feature set, for instance by pruning sub-patterns whose weight stays near
+zero, and revisit the selection rule under this scheme, where covering many candidate combinations appeared to
+matter more than complementarity within a single query.
+
+
+% =====================================================================================================
+% RUNNING EXAMPLE: one block per subsection of the methodology, in this order
+% =====================================================================================================
+
+% -----------------------------------------------------------------------------------------------------
+% (R1) In the combination-user part, after Algorithm~\ref{alg:combo}
+% -----------------------------------------------------------------------------------------------------
+\paragraph{Running example.}
+\label{ex:running}
+We follow one iteration of a real run on the soybean dataset with $k = 10$ and a combination user who likes
+$\{29, 37\}$ (\texttt{stem\_cankers=absent}, \texttt{external\_decay=absent}) and $\{33, 45\}$
+(\texttt{canker\_lesion=dna}, \texttt{sclerotia=absent}). Table~\ref{tab:ex_query} shows the first query in
+the order the user ranks it. The three patterns that contain $\{33, 45\}$ score $1$ plus a small
+surprisingness term and come first; the seven others contain no liked pair and are ordered by surprisingness
+alone. Since all weights start at $1$, the model score $w \cdot x$ of every pattern is its length.
+
+\begin{table}[t]
+\centering
+\caption{Running example: the first query, ranked by the user (rank $0$ preferred). \#: position in the
+sampled order; liked pair in bold.}
+\label{tab:ex_query}
+\small
+\setlength{\tabcolsep}{4pt}
+\begin{tabular}{rrlrr}
+\toprule
+Rank & \# & Pattern & $w \cdot x$ & $u(X)$ \\
+\midrule
+0 & 3 & $\{8,11,27,29,\mathbf{33},40,42,\mathbf{45}\}$ & 8 & 1.0008 \\
+1 & 6 & $\{19,\mathbf{33},42,\mathbf{45},47\}$          & 5 & 1.0003 \\
+2 & 7 & $\{7,13,18,27,\mathbf{33},\mathbf{45}\}$        & 6 & 1.0002 \\
+3 & 5 & $\{11,26,28,32,40\}$                            & 5 & 0.0012 \\
+4 & 4 & $\{11,13,28,35,40,42,45\}$                      & 7 & 0.0007 \\
+5 & 1 & $\{4,7,23,26,40,45\}$                           & 6 & 0.0004 \\
+6 & 9 & $\{10,20,35,40,42\}$                            & 5 & 0.0003 \\
+7 & 8 & $\{11,13,23,26,34,40,47\}$                      & 7 & 0.0003 \\
+8 & 2 & $\{14,18,27,37,40,42,47\}$                      & 7 & 0.0003 \\
+9 & 0 & $\{7,11,23,32,37,40,45\}$                       & 7 & 0.0000 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+% -----------------------------------------------------------------------------------------------------
+% (R2) In "Mining multiple discriminating sub-patterns", right after Eq.~\eqref{eq:icv} and its "where ..."
+% -----------------------------------------------------------------------------------------------------
+\paragraph{Running example (cont.).}
+In Table~\ref{tab:ex_query}, $\mu = 4.5$. The liked pair $Y = \{33, 45\}$ is contained in the patterns of
+ranks $0, 1, 2$, so
+\begin{equation*}
+  \ICV(Y) = 3\,(4.5 - 1)^2 + 7\,(4.5 - 6)^2 = 36.75 + 15.75 = 52.5 ,
+\end{equation*}
+the highest of the $39$ distinct covers with a positive ICV. Next come $\{33, 42, 45\}$ (ranks $0, 1$) and
+$\{37, 40\}$ (ranks $8, 9$), both with ICV $40.0$.
+
+% -----------------------------------------------------------------------------------------------------
+% (R3) After the paragraph that follows Algorithm~\ref{alg:partition}
+% -----------------------------------------------------------------------------------------------------
+\paragraph{Running example (cont.).}
+With $m = 3$, \textsc{PartitionGain} starts from $\{33, 45\}$ ($\PICV = 52.5$; $\TSS = 82.5$). Although
+$\{33, 42, 45\}$ has the second-highest ICV, its cover lies inside that of $\{33, 45\}$ and only splits the
+preferred group again. $\{37, 40\}$ instead separates the two least preferred patterns, raising PICV to $70.0$
+(it ties with $\{11, 28, 40\}$, which has the lower ICV). The third step adds $\{11, 28, 40\}$ (ranks $3, 4$;
+$\PICV = 77.5$). The three sub-patterns divide the query into four groups, the preferred ranks $0$--$2$, the
+least preferred $8$--$9$, ranks $3$--$4$ and ranks $5$--$7$, which together explain $77.5$ of $82.5$.
+
+% -----------------------------------------------------------------------------------------------------
+% (R4) In Option 1, after Eq.~\eqref{eq:patterns-fine}
+% -----------------------------------------------------------------------------------------------------
+\paragraph{Running example (cont.).}
+With the three selected sub-patterns and item features only, each pattern of Table~\ref{tab:ex_query} gets
+three presence descriptors: $(1, 0, 0)$ for the preferred pattern of rank $0$, which contains $\{33, 45\}$, and
+$(0, 1, 0)$ for the pattern of rank $9$, which contains $\{37, 40\}$. In the training pair formed by these two
+patterns, the dynamic part of the difference vector is therefore $(1, -1, 0)$.
+
+% -----------------------------------------------------------------------------------------------------
+% (R5) In "Weight Updates under Option 1", after Eq.~\eqref{eq:fine-lin-item}/(eq:fine-exp-item)
+% -----------------------------------------------------------------------------------------------------
+\paragraph{Running example (cont.).}
+After learning on this first query ($\eta = 0.17$, linear update), the weight of item $33$ has grown from $1$ to
+$2.16$, but the weight of the liked pair $\{33, 45\}$ is still exactly $0$. In this query, item $33$ occurs in
+exactly the same three patterns as $\{33, 45\}$, and SCD updates the item weights before the dynamic ones, so
+item $33$ absorbs the ranking signal first. Only $\{37, 40\}$ receives a non-zero
+weight, $-0.58$. Folding then multiplies the weights of items $37$ and $40$ by
+$1 + 0.17 \cdot (-0.58 / 3) = 0.967$ (item $40$: $1.0 \to 0.967$), and leaves items $33$ and $45$ unchanged.
+The preference for $33$ and $45$ \emph{together} is not transferred; it is only partially captured by the
+weight of item $33$ alone, and the pair must be rediscovered in a later query.
+
+% -----------------------------------------------------------------------------------------------------
+% (R6) At the end of the new subsection (F) "Keeping the Sub-patterns"
+% -----------------------------------------------------------------------------------------------------
+\paragraph{Running example (cont.).}
+In the run with the same seed and the keep scheme, both liked pairs stay in the model. The weight of
+$\{29, 37\}$ grows from $0.26$ after iteration $2$ to $1.16$ after iteration $20$, the largest of the $47$ kept
+sub-patterns, and that of $\{33, 45\}$ from $0$ to $0.72$.
+
+% -----------------------------------------------------------------------------------------------------
+% (R7) Optional: iterations 2 and 3 in the appendix, as table* (two-column width), from
+%      docs/report-examples.tex (Table "tab:ex_iter23"); change \begin{table} to \begin{table*}.
+% -----------------------------------------------------------------------------------------------------

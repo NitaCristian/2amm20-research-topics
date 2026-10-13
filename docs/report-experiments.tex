@@ -1,4 +1,4 @@
-% Experimental evaluation. Packages: booktabs, multirow, amsmath. Numbers: docs/RESULTS.md.
+% Experimental evaluation. Packages: booktabs, amsmath. Numbers: docs/RESULTS.md.
 
 \section{Experimental Evaluation}
 \label{sec:experiments}
@@ -37,23 +37,26 @@ Table~\ref{tab:fidelity} measures each correction on the surprisingness user.
 \begin{table}[t]
 \centering
 \caption{Published implementation vs.\ corrections (surprisingness user, chess and soybean, 10 runs).
-$p$: paired test against the published implementation.}
+Pub.: published code; $+$: published code with one correction (\emph{stale}: SCD inner products,
+\emph{index}: transferred-weight index, \emph{sampler}: sampling with the learned model, \emph{int}: integer
+ICV means, \emph{cover}: in-place covers); Fixed: all corrections; $w^0 = 0$: fixed, initial weights $0$.
+$p$: paired test against Pub.}
 \label{tab:fidelity}
 \small
 \begin{tabular}{lccc}
 \toprule
-Configuration & acc (\%) & $p$ & P@10\% (\%) \\
+Config. & acc & $p$ & P@10\% \\
 \midrule
-Score $= |X|$ (chess / soybean)            & 64.4 / 66.4 & --    & 26.0 / 17.0 \\
-LetSIP                                      & 71.8 & 0.10  & 32.9 \\
-\textsc{DiSPaLe}, published                 & 71.1 & --    & 30.7 \\
-\quad + stale inner products fixed          & 71.7 & 0.002 & 33.2 \\
-\quad + transferred-weight index fixed      & 71.9 & 0.002 & 33.5 \\
-\quad + sampling with the learned model     & 71.3 & 0.27  & 31.6 \\
-\quad + integer ICV means fixed             & 71.1 & 0.66  & 30.5 \\
-\quad + in-place covers fixed               & 69.4 & 0.004 & 27.6 \\
-\textsc{DiSPaLe}, all corrections           & 72.0 & 0.020 & 32.5 \\
-\quad initial weights $0$ (linear folding)  & 66.9 & 0.004 & 32.5 \\
+Length          & 64.4 / 66.4 & --    & 26.0 / 17.0 \\
+LetSIP          & 71.8 & 0.10  & 32.9 \\
+Pub.            & 71.1 & --    & 30.7 \\
+$+$ stale       & 71.7 & 0.002 & 33.2 \\
+$+$ index       & 71.9 & 0.002 & 33.5 \\
+$+$ sampler     & 71.3 & 0.27  & 31.6 \\
+$+$ int         & 71.1 & 0.66  & 30.5 \\
+$+$ cover       & 69.4 & 0.004 & 27.6 \\
+Fixed           & 72.0 & 0.020 & 32.5 \\
+$w^0 = 0$       & 66.9 & 0.004 & 32.5 \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -68,36 +71,36 @@ by pattern length on this user.
 
 \begin{table}[t]
 \centering
-\caption{Combination users, all datasets (30 runs per configuration). Fold: the published scheme; keep:
-permanent sub-pattern features. $p$: paired test of acc-combo against \textsc{DiSPaLe} with
-$k_{disc} = 1$ (fold).}
+\caption{Combination users, all datasets (30 runs per configuration). Fold: published scheme; Keep:
+permanent sub-pattern features. Rows other than $m{=}1$ use $m = 3$ (Gain:
+\textsc{PartitionGain}, Pairs: pair coverage, 10sw: ten SCD sweeps). acc-c: acc-combo. $p$: paired test of
+acc-c against Fold $m{=}1$.}
 \label{tab:main}
 \small
-\begin{tabular}{llcccc}
+\setlength{\tabcolsep}{4pt}
+\begin{tabular}{lcccc}
 \toprule
-& Configuration & acc & acc-combo & P@10\% & $p$ \\
+Config. & acc & acc-c & P@10\% & $p$ \\
 \midrule
-& LetSIP                                   & 77.0 & 91.9 & 78.1 & 0.75 \\
-\midrule
-\multirow{6}{*}{fold}
-& $k_{disc} = 1$                           & 77.0 & 92.0 & 78.4 & --   \\
-& $k_{disc} = 3$, Top                      & 77.0 & 92.1 & 78.2 & 0.78 \\
-& $k_{disc} = 3$, MMR                      & 77.0 & 92.0 & 78.3 & 0.94 \\
-& $k_{disc} = 3$, coverage                 & 77.0 & 92.0 & 78.4 & 0.93 \\
-& $k_{disc} = 3$, \textsc{PartitionGain}   & 77.0 & 92.0 & 78.4 & 0.99 \\
-& $k_{disc} = 3$, pair coverage            & 77.0 & 92.0 & 78.4 & 0.95 \\
-\midrule
-\multirow{4}{*}{keep}
-& $k_{disc} = 1$                           & 78.5 & 94.6 & 86.4 & $<0.001$ \\
-& $k_{disc} = 3$, Top                      & 78.8 & 95.3 & 88.3 & $<0.001$ \\
-& $k_{disc} = 3$, \textsc{PartitionGain}   & 78.5 & 94.9 & 86.5 & $<0.001$ \\
-& $k_{disc} = 3$, \textsc{PartitionGain}, 10 sweeps & 78.7 & 96.0 & 90.0 & $<0.001$ \\
+LetSIP              & 77.0 & 91.9 & 78.1 & 0.75 \\
+\multicolumn{5}{l}{\emph{Fold}} \\
+\quad $m{=}1$       & 77.0 & 92.0 & 78.4 & --   \\
+\quad Top           & 77.0 & 92.1 & 78.2 & 0.78 \\
+\quad MMR           & 77.0 & 92.0 & 78.3 & 0.94 \\
+\quad Coverage      & 77.0 & 92.0 & 78.4 & 0.93 \\
+\quad Gain          & 77.0 & 92.0 & 78.4 & 0.99 \\
+\quad Pairs         & 77.0 & 92.0 & 78.4 & 0.95 \\
+\multicolumn{5}{l}{\emph{Keep}} \\
+\quad $m{=}1$       & 78.5 & 94.6 & 86.4 & $<$0.001 \\
+\quad Top           & 78.8 & 95.3 & 88.3 & $<$0.001 \\
+\quad Gain          & 78.5 & 94.9 & 86.5 & $<$0.001 \\
+\quad Gain, 10sw    & 78.7 & 96.0 & 90.0 & $<$0.001 \\
 \bottomrule
 \end{tabular}
 \end{table}
 
 With the fold-and-discard scheme, no selection rule changes the learned model (Table~\ref{tab:main}, fold):
-all configurations reach the same accuracy as $k_{disc} = 1$ and LetSIP. The learned sub-pattern weights
+all configurations reach the same accuracy as $m = 1$ and LetSIP. The learned sub-pattern weights
 remain between $0.01$ and $0.06$, against about $0.9$ for the item weights, and the model before folding
 coincides with the model after folding. Running ten SCD sweeps per iteration raises the sub-pattern
 weights to $0.16$--$0.44$, but the folded model still does not improve, and the additional sweeps reduce
@@ -110,33 +113,38 @@ the folded models stay below the offline items-only reference on acc-combo.
 
 When every selected sub-pattern is kept as a permanent feature, the model improves significantly on every
 dataset (Table~\ref{tab:main}, keep, and Table~\ref{tab:keep_datasets}): $+1.5$ points of accuracy, $+2.6$
-of acc-combo and $+8$ of P@10\% for $k_{disc} = 1$, and up to $+4.0$ and $+11.6$ with $k_{disc} = 3$ and
+of acc-combo and $+8$ of P@10\% for $m = 1$, and up to $+4.0$ and $+11.6$ with $m = 3$ and
 ten sweeps. The kept models exceed the offline items-only reference on acc-combo and approach the reference
 that is given the true liked pairs. Selecting several sub-patterns per iteration adds a smaller gain on top
-of keeping them: against $k_{disc} = 1$ with keep, Top ($p = 0.024$ on acc-combo) and
+of keeping them: against $m = 1$ with keep, Top ($p = 0.024$ on acc-combo) and
 \textsc{PartitionGain} with ten sweeps ($p = 0.019$ on acc-combo, $p = 0.005$ on P@10\%) improve, whereas
 \textsc{PartitionGain} with one sweep does not ($p = 0.25$). After Holm's correction over these six tests,
 only the P@10\% improvement of \textsc{PartitionGain} with ten sweeps remains significant.
 
 \begin{table}[t]
 \centering
-\caption{acc-combo / P@10\% per dataset (10 runs each).}
+\caption{Per dataset (10 runs each): acc-combo (acc-c) and P@10\% (P). Names as in
+Table~\ref{tab:main}; Length: score $= |X|$; Offline: models fitted on all pairs of 2000 other patterns,
+over items only or items plus the true liked pairs.}
 \label{tab:keep_datasets}
 \small
-\begin{tabular}{lccc}
+\setlength{\tabcolsep}{3.5pt}
+\begin{tabular}{lcccccc}
 \toprule
-Configuration & chess & mushroom & soybean \\
+& \multicolumn{2}{c}{chess} & \multicolumn{2}{c}{mushroom} & \multicolumn{2}{c}{soybean} \\
+\cmidrule(lr){2-3} \cmidrule(lr){4-5} \cmidrule(lr){6-7}
+Config. & acc-c & P & acc-c & P & acc-c & P \\
 \midrule
-Score $= |X|$                                         & 84.3 / 67.5 & 79.5 / 50.0 & 80.4 / 50.5 \\
-LetSIP                                                & 94.0 / 93.4 & 90.7 / 68.5 & 91.0 / 72.5 \\
-Fold, $k_{disc} = 1$                                  & 94.5 / 93.6 & 90.5 / 67.7 & 91.0 / 73.8 \\
-Fold, $k_{disc} = 3$, \textsc{PartitionGain}          & 94.2 / 93.3 & 90.6 / 68.8 & 91.2 / 73.1 \\
-Keep, $k_{disc} = 1$                                  & 97.2 / 98.8 & 92.8 / 74.2 & 93.9 / 86.2 \\
-Keep, $k_{disc} = 3$, Top                             & 97.8 / 99.3 & 93.8 / 79.3 & 94.3 / 86.4 \\
-Keep, $k_{disc} = 3$, \textsc{PartitionGain}, 10 sweeps & 98.4 / 99.4 & 93.6 / 78.9 & 96.1 / 91.8 \\
+Length              & 84.3 & 67.5 & 79.5 & 50.0 & 80.4 & 50.5 \\
+LetSIP              & 94.0 & 93.4 & 90.7 & 68.5 & 91.0 & 72.5 \\
+Fold $m{=}1$        & 94.5 & 93.6 & 90.5 & 67.7 & 91.0 & 73.8 \\
+Fold Gain           & 94.2 & 93.3 & 90.6 & 68.8 & 91.2 & 73.1 \\
+Keep $m{=}1$        & 97.2 & 98.8 & 92.8 & 74.2 & 93.9 & 86.2 \\
+Keep Top            & 97.8 & 99.3 & 93.8 & 79.3 & 94.3 & 86.4 \\
+Keep Gain, 10sw     & 98.4 & 99.4 & 93.6 & 78.9 & 96.1 & 91.8 \\
 \midrule
-Offline, items only                                   & 94.9 / 99.5 & 91.0 / 69.0 & 93.0 / 78.0 \\
-Offline, items + true liked pairs                     & 99.3 / 100  & 97.1 / 87.0 & 98.8 / 96.0 \\
+Offline, items      & 94.9 & 99.5 & 91.0 & 69.0 & 93.0 & 78.0 \\
+Offline, $+$pairs   & 99.3 & 100  & 97.1 & 87.0 & 98.8 & 96.0 \\
 \bottomrule
 \end{tabular}
 \end{table}
