@@ -15,3 +15,6 @@ results/
 .vscode/
 *.iml
 .DS_Store
+
+# Report and notes live on the dev-cristian-docs branch
+docs/
