@@ -42,16 +42,33 @@ public class BestICVSubset {
 	public List<Candidate> candidates = new ArrayList<Candidate>();
 	public List<Candidate> selected = new ArrayList<Candidate>();
 	
-	// a sub-itemset, the query patterns containing it (cover) and its ICV
+	// switches that restore errors of the published implementation, to measure each correction on its own
+	// legacyIntAverage:  mean ranks in the ICV are truncated to integers
+	// legacyCoverInPlace: the cover of Y u {i} is computed by intersecting the stored cover of Y in place
+	// legacyNoDedupe:    a sub-itemset reachable from several parents is evaluated once per parent
+	public boolean legacyIntAverage = false;
+	public boolean legacyCoverInPlace = false;
+	public boolean legacyNoDedupe = false;
+	
+	// statistics of the last search, for the trace
+	public int nbCandidatesRaw = 0;      // sub-itemsets with ICV > 0
+	public int nbTiedAtMax = 0;          // distinct covers sharing the highest ICV
+	public boolean top1Matches = true;   // the first selected sub-pattern is the one the original top-1 rule returns
+	public int nbTop1Mismatches = 0;     // over the whole run
+	public long enumerateNanos = 0, selectNanos = 0;
+	
+	// a sub-itemset, the query patterns containing it (cover), its ICV and its position in the enumeration
 	public static class Candidate {
 		public final BitSet items;
 		public final BitSet cover;
 		public final double icv;
+		public final int order;
 		
-		public Candidate(BitSet items, BitSet cover, double icv) {
+		public Candidate(BitSet items, BitSet cover, double icv, int order) {
 			this.items = items;
 			this.cover = cover;
 			this.icv = icv;
+			this.order = order;
 		}
 	}
 	
@@ -102,7 +119,8 @@ public class BestICVSubset {
 		if(ranks.length != 0)
 			avg /= ranks.length;
 		
-		return avg;
+		// the published code accumulated in an int, so the mean was truncated
+		return legacyIntAverage ? Math.floor(avg) : avg;
 	}
 	
 	//*
@@ -117,6 +135,8 @@ public class BestICVSubset {
 	//*/
 	
 	public void enumerateItemsets() {
+		long start = System.nanoTime();
+		int order = 0;
 		double highestICV = 0;
 		BitSet top1Pattern = new BitSet();
 		Set<BitSet> subItemsets = new HashSet<BitSet>();
@@ -160,7 +180,7 @@ public class BestICVSubset {
 			double icv = interclassVariance(all_ranks, coveredRank, unCoveredRank);
 			subItemsets.add(it);
 			if(icv > 0)
-				candidates.add(new Candidate((BitSet) it.clone(), (BitSet) currentPattern.clone(), icv));
+				candidates.add(new Candidate((BitSet) it.clone(), (BitSet) currentPattern.clone(), icv, order++));
 			if(icv > highestICV) {
 				highestICV = icv;
 				top1Pattern = (BitSet) it.clone();
@@ -193,19 +213,19 @@ public class BestICVSubset {
 						new_subItemset.set(item);
 						
 						// the same sub-itemset can be reached from several parents: evaluate it only once
-						if(nextSubItemsets.contains(new_subItemset))
+						if(!legacyNoDedupe && nextSubItemsets.contains(new_subItemset))
 							continue;
 						
 						// clone: `and' must not modify the stored cover of `sub'
-						BitSet it = new BitSet(), cov = (BitSet) tID.get(sub).clone();
+						BitSet it = new BitSet(), cov = legacyCoverInPlace ? tID.get(sub) : (BitSet) tID.get(sub).clone();
 						it.set(item);
 						//cov.intersects(tID.get(it));
 						cov.and(tID.get(it));
 					
-						// check if the subitemset doesn't exist in the subItemsets list
-						// and if it exist in at least one of the itemset in the list (|cov|>0)
-						
-						if(!subItemsets.contains(new_subItemset) && (cov.cardinality()>0)){
+						// keep it if it occurs in at least one query pattern (|cov|>0)
+						// (the published check !subItemsets.contains(new_subItemset) was always true:
+						// subItemsets only holds sub-itemsets one item shorter)
+						if(cov.cardinality()>0){
 							tID.put(new_subItemset, cov); // save it cover
 							//subItemsets.add(new_subItemset); // save the new sub-itemset
 							nextSubItemsets.add(new_subItemset); // save the new sub-itemset
@@ -221,7 +241,7 @@ public class BestICVSubset {
 						
 							double icv = interclassVariance(all_ranks, coveredRank, unCoveredRank);
 							if(icv > 0)
-								candidates.add(new Candidate((BitSet) new_subItemset.clone(), (BitSet) cov.clone(), icv));
+								candidates.add(new Candidate((BitSet) new_subItemset.clone(), (BitSet) cov.clone(), icv, order++));
 							if(icv > highestICV) {
 								highestICV = icv;
 								top1Pattern = (BitSet) new_subItemset.clone();
@@ -257,7 +277,19 @@ public class BestICVSubset {
 			bestICVSubsetBitSet.set(i);
 		}
 		
+		enumerateNanos = System.nanoTime() - start;
+		start = System.nanoTime();
 		selectSubPatterns();
+		selectNanos = System.nanoTime() - start;
+		
+		// regression check: every rule starts from the first candidate, which must be the sub-pattern the
+		// original top-1 rule (kept above as top1Pattern) returns
+		top1Matches = selected.isEmpty() || selected.get(0).icv == 0.0 || selected.get(0).items.equals(top1Pattern);
+		if(!top1Matches) {
+			nbTop1Mismatches++;
+			System.err.println("WARNING: first selected sub-pattern " + selected.get(0).items
+					+ " differs from the original top-1 sub-pattern " + top1Pattern);
+		}
 		
 		//BitSet cov_tempo = dataset.covers.getCoverPOP(
 		//			new TItemSet(bestICVSubsetBitSet)).getListTransactions();
@@ -268,25 +300,46 @@ public class BestICVSubset {
 		getAllTransactions();
 	}
 	
-	// order used to break ICV ties: higher ICV first, then longer sub-pattern first
-	// (List.sort is stable, so remaining ties keep the enumeration order, as the original top-1 search did)
+	// order of the candidates: higher ICV first, then longer sub-pattern, then earlier in the enumeration
+	// (this reproduces the original top-1 rule, which kept the first, longest sub-itemset with the highest ICV)
 	private static int compareCandidates(Candidate a, Candidate b) {
 		int c = Double.compare(b.icv, a.icv);
 		if(c != 0)
 			return c;
-		return Integer.compare(b.items.cardinality(), a.items.cardinality());
+		c = Integer.compare(b.items.cardinality(), a.items.cardinality());
+		if(c != 0)
+			return c;
+		return Integer.compare(a.order, b.order);
+	}
+	
+	// sub-itemsets with the same query cover split the query identically, so they are the same feature for the
+	// learner: keep one per cover, the first in the candidate order (longest, then earliest)
+	private static List<Candidate> distinctCovers(List<Candidate> sorted) {
+		List<Candidate> distinct = new ArrayList<Candidate>();
+		Set<BitSet> seen = new HashSet<BitSet>();
+		for(Candidate c : sorted)
+			if(seen.add(c.cover))
+				distinct.add(c);
+		return distinct;
 	}
 	
 	// select up to `nbSubPatterns' sub-patterns among the candidates with the configured rule;
-	// every rule starts with the highest-ICV candidate (the original DiSPaLe sub-pattern)
+	// every rule starts with the first candidate, i.e. the sub-pattern of the original top-1 rule
 	public void selectSubPatterns() {
 		selected.clear();
 		List<Candidate> sorted = new ArrayList<Candidate>(candidates);
 		sorted.sort(BestICVSubset::compareCandidates);
+		nbCandidatesRaw = sorted.size();
+		sorted = distinctCovers(sorted);
+		candidates = sorted;
+		nbTiedAtMax = 0;
+		for(Candidate c : sorted)
+			if(c.icv == sorted.get(0).icv)
+				nbTiedAtMax++;
 		
 		if(sorted.isEmpty()) {
 			// no discriminating sub-pattern: keep the original behaviour (the empty sub-pattern)
-			selected.add(new Candidate(new BitSet(), new BitSet(), 0.0));
+			selected.add(new Candidate(new BitSet(), new BitSet(), 0.0, 0));
 			return;
 		}
 		selected.addAll(selector.select(sorted, nbSubPatterns, iter));

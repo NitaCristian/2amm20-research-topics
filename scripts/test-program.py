@@ -62,7 +62,7 @@ features_abbrv = ["F", "I", "L", "T", "FI", "FL", "FT", "IL", "IT", "LT", "FIL",
 hui_features_abbrv = ["I", "IT"]
 #
 fUpdate = ["all", "ALL", "rnd", "RND"]
-disc_selection = ["top", "complementary", "mmr", "coverage", "gain", "pairs"]
+disc_selection = ["top", "mmr", "coverage", "gain", "pairs"]
 #
 #=====================================================================================
 #=====================================================================================
@@ -179,7 +179,7 @@ def get_argParser():
     #
     parser.add_argument("-t", "--tilt", type=float, nargs=1, help="tilt parameter for the weight function ")
     parser.add_argument("-e", "--eta", type=float, nargs=1, help=f"the regularization parameter of methods {disc_methods} ")
-    parser.add_argument("-ag", "--aggregation", type=str, default="ADD", choices=disc_aggregation, help=f"how the weight of a discriminating sub-pattern is apportioned to its items: ADD (w + eta*d, default), LIN (w*(1+eta*d)) or EXP (w*exp(eta*d)); LIN and EXP are the original ones, meant for weights starting at 1 (-iw 1)")
+    parser.add_argument("-ag", "--aggregation", type=str, default="LIN", choices=disc_aggregation, help=f"how the weight of a discriminating sub-pattern is folded into its items: LIN (w*(1+eta*d), default, as published), EXP (w*exp(eta*d)) or ADD (w + eta*d)")
     #
     #parser.add_argument("-FU", "--featsUpdate", type=str, nargs=1, default="ALL", choices=fUpdate, help=f"define how the features weights should be updated ")
     #
@@ -189,18 +189,21 @@ def get_argParser():
     #
     parser.add_argument("-s", "--seed", type=int, nargs="?", help="the the random seed")
     parser.add_argument("-nd", "--nb-disc", type=int, default=1, help=f"max number of discriminating sub-patterns used per iteration by {disc_methods} (default: 1, the original DiSPaLe)")
-    parser.add_argument("-sel", "--selection", type=str, default="gain", choices=disc_selection, help="how the discriminating sub-patterns are selected: `top' (highest ICV), `complementary'/`mmr' (ICV discounted by Jaccard redundancy), `coverage' (skip sub-patterns whose covers are correlated), `gain' (partition gain, default) or `pairs' (pair coverage)")
+    parser.add_argument("-sel", "--selection", type=str, default="gain", choices=disc_selection, help="how the discriminating sub-patterns are selected: `top' (highest ICV, one per distinct cover), `mmr' (ICV discounted by Jaccard similarity: diversity), `coverage' (skip sub-patterns whose covers are correlated), `gain' (partition gain: complementarity, default) or `pairs' (pair coverage)")
     parser.add_argument("-mo", "--max-overlap", type=float, default=0.5, help="coverage selection: max |correlation| between the covers of two selected sub-patterns")
     parser.add_argument("-mg", "--min-gain", type=float, default=0.0, help="gain / pairs selection: stop when the gain is at most this share of the total, in [0, 1]")
     parser.add_argument("-fx", "--expansion", type=str, default="separate", choices=["separate", "pooled"], help="discriminating features: one per sub-pattern (separate) or one for all (pooled)")
-    parser.add_argument("-tn", "--transfer-norm", type=str, default="m", choices=["m", "none"], help="divide the transferred sub-pattern weights by m, or not")
+    parser.add_argument("-tn", "--transfer-norm", type=str, default="fixed", choices=["fixed", "selected", "none"], help="divide the transferred sub-pattern weights by the requested m (fixed, default), by the number selected in the iteration (selected), or not at all (none)")
+    parser.add_argument("-cw", "--clue-warm-start", type=str, default="memory", choices=["memory", "zero"], help="starting weight of a re-selected sub-pattern feature: its last learned weight (memory, as published) or 0 (zero)")
+    parser.add_argument("-kp", "--keep-sub-patterns", type=str, default="fold", choices=["fold", "keep"], help="sub-pattern features: folded into the items after each iteration (fold, as published) or kept as permanent features (keep)")
+    parser.add_argument("-lg", "--legacy", type=str, default="", help="errors of the published code to restore, comma separated: icvint, coverinplace, nodedupe, stalez, nolearnedsampling, weightindex, or all")
     parser.add_argument("-ch", "--clue-history", type=str, default="none", choices=["none", "full"], help="clue features of the pairs of earlier iterations: `none' sets them to 0 (original DiSPaLe), `full' computes them from the stored patterns")
-    parser.add_argument("-cb", "--combos", type=str, default="29,52;40,58", help="ComboRanker taste: item combinations with optional weights, e.g. '29,52;40,58' or '29,52:1;9,40:-1' (default for chess)")
-    parser.add_argument("-iw", "--init-weight", type=float, default=None, help="initial weight of every feature (default: 0 for letsip and dispale, 1 for lutom and lutomDisc). The original code used 1, which saturates the logistic weight function and makes the sampling almost uniform")
+    parser.add_argument("-cb", "--combos", type=str, default=None, help="ComboRanker taste (required with -r ComboRanker): item combinations with optional weights, e.g. '29,52;40,58' or '29,52:1;9,40:-1'")
+    parser.add_argument("-iw", "--init-weight", type=float, default=None, help="initial weight of every feature (default 1, as in the published code; the paper states 0)")
     parser.add_argument("-sw", "--scd-sweeps", type=int, default=1, help="number of SCD sweeps over the features per iteration (default 1, as in the original code)")
     parser.add_argument("-la", "--lambda", dest="scd_lambda", type=float, default=1e-6, help="L1 penalty of SCD at the first iteration, multiplied by iteration+1 (default 1e-6, as in the original code)")
     parser.add_argument("-tr", "--trace", type=str, default=None, help="write a structured trace of the run (JSON Lines) to this file: query, ranking, sub-patterns, weights before/after learning and folding")
-    parser.add_argument("-rw", "--redundancy-weight", type=float, default=1.0, help="redundancy penalty of the complementary selection, in [0, 1] (0 = same as top)")
+    parser.add_argument("-rw", "--redundancy-weight", type=float, default=1.0, help="redundancy penalty of the mmr selection, in [0, 1] (0 = same as top)")
     #
     return parser
 #
@@ -237,7 +240,7 @@ def parse_parameters():
     selection:str = params.selection
     redundancyWeight:float = params.redundancy_weight
     initWeight = params.init_weight
-    extra = (params.max_overlap, params.min_gain, params.expansion, params.transfer_norm, params.combos, params.clue_history, params.scd_sweeps, params.scd_lambda, params.trace)
+    extra = (params.max_overlap, params.min_gain, params.expansion, params.transfer_norm, params.combos, params.clue_history, params.scd_sweeps, params.scd_lambda, params.trace, params.clue_warm_start, params.legacy, params.keep_sub_patterns)
     #
     #-------------------------------------------------------------------
     #
@@ -291,7 +294,7 @@ def get_arguments():
     (method, dataname, freq, feats, oracle, algo, learner, ranker, nbIter) = parameters[:9]
     (queryK, queryR, eta, aggreg, featsUpdate, tilt, weightsFile, rndSeed, timeout) = parameters[9:18]
     (nbDisc, selection, redundancyWeight, initWeight, extra) = parameters[18:23]
-    (maxOverlap, minGain, expansion, transferNorm, combos, clueHistory, scdSweeps, scdLambda, tracePath) = extra
+    (maxOverlap, minGain, expansion, transferNorm, combos, clueHistory, scdSweeps, scdLambda, tracePath, clueWarmStart, legacy, keepSubPatterns) = extra
     #
     #-------------------------------------------------------------------
     #
@@ -309,8 +312,14 @@ def get_arguments():
     arguments = f"-m {method} -o {oracle} -a {algo} -F {feats} -r {ranker} -k {queryK} -f {minsup} -i {nbIter} "
     arguments += f"-le {learner} -ag {aggreg} -e {eta} -t {tilt} -l {queryR} -FU {featsUpdate} -s {rndSeed} "
     arguments += f"-d {data_file_cp4im} -FI {data_file_fimi} "
-    arguments += f"-nd {nbDisc} -sel {selection} -rw {redundancyWeight} -mo {maxOverlap} -mg {minGain} -fx {expansion} -tn {transferNorm} -ch {clueHistory} -sw {scdSweeps} -la {scdLambda}"
+    arguments += f"-nd {nbDisc} -sel {selection} -rw {redundancyWeight} -mo {maxOverlap} -mg {minGain} -fx {expansion} -tn {transferNorm} -ch {clueHistory} -sw {scdSweeps} -la {scdLambda} -cw {clueWarmStart}"
+    if keepSubPatterns != "fold":
+        arguments += f" -kp {keepSubPatterns}"
+    if legacy:
+        arguments += f" -lg {legacy}"
     if ranker == "ComboRanker":
+        if not combos:
+            sys.exit("-r ComboRanker needs the user's item combinations: -cb '29,52;40,58'")
         arguments += f" -cb '{combos}'"
     if initWeight is not None:
         arguments += f" -iw {initWeight}"

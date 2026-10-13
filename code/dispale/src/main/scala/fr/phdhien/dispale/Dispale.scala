@@ -22,7 +22,7 @@ import be.kuleuven.weightgen.{Uniform, WeightFunction, WeightGenConfiguration, W
 import com.typesafe.scalalogging.Logger
 
 import fr.phdhien.dispale.feature.{Features, FeatureMap, FeatureMapGenerator, Patterns, DiscriminativeFrequency, DiscriminativeLength,
-                                   PooledPatterns, PooledFrequency, PooledLength}
+                                   PooledPatterns, PooledFrequency, PooledLength, KeptSubPatterns}
 
 import org.slf4j.LoggerFactory
 
@@ -95,12 +95,22 @@ class Dispale(
     icvObject.setSelection(multi.nbSubPatterns,
         SubPatternSelectors.create(multi.selection, multi.redundancyWeight, multi.maxOverlap, multi.minGain))
     val pooled: Boolean = multi.expansion.toLowerCase == "pooled"
+    // errors of the published implementation that can be restored one by one (-lg), to measure each correction
+    icvObject.legacyIntAverage = multi.legacy("icvint")
+    icvObject.legacyCoverInPlace = multi.legacy("coverinplace")
+    icvObject.legacyNoDedupe = multi.legacy("nodedupe")
+    // -kp keep: the selected sub-patterns become permanent features (never folded), in order of first selection
+    val keep: Boolean = multi.keepSubPatterns.toLowerCase == "keep"
+    val kept = scala.collection.mutable.ArrayBuffer[Itemset]()
+    // the published code never passed the learned weights to the sampler (it kept sampling with these)
+    private val initialWeightFunction: LogisticWeight = learnedWeight
     Trace.event("run_dispale", -1,
         "aggregation" -> Trace.str(aggregation_function), "nb_sub_patterns" -> multi.nbSubPatterns.toString,
         "selection" -> Trace.str(multi.selection), "redundancy_weight" -> Trace.num(multi.redundancyWeight),
         "max_overlap" -> Trace.num(multi.maxOverlap), "min_gain" -> Trace.num(multi.minGain),
         "expansion" -> Trace.str(multi.expansion), "transfer_norm" -> Trace.str(multi.transferNorm),
-        "clue_history" -> Trace.str(multi.clueHistory))
+        "clue_history" -> Trace.str(multi.clueHistory), "clue_warm_start" -> Trace.str(multi.clueWarmStart),
+        "legacy" -> Trace.arr(multi.legacy.toSeq.sorted.map(Trace.str)), "keep_sub_patterns" -> Trace.str(multi.keepSubPatterns))
     //************************************************************************************************************
     protected override val logger = Logger(LoggerFactory.getLogger("DiSPaLe"))  
     
@@ -114,6 +124,7 @@ class Dispale(
                 case params.iterations =>
                     val glf = weight_function.asInstanceOf[LogisticWeight]
                     logTermination(currentIteration, glf)
+                    traceEnd("top1_mismatches" -> icvObject.nbTop1Mismatches.toString)
                     //
                     glf
                 case _ =>
@@ -121,10 +132,12 @@ class Dispale(
                     var msg = s"Sampling $querySize itemsets to query"
                     logger.debug(s" ${msg.replace("ing", "ed")}")
 
+                    val start = System.nanoTime()
                     currentQuery = pattern_miner.run_pattern_mining(
                                                                         queries_array, querySize, queryRetention, 
                                                                         currentIteration, nb_features, all_w.array, weight_function
                                                                     )(rnd)
+                    timing("sample") = (System.nanoTime() - start) / 1e6
                     
                     // *************** RANK PATTERNS BY DESCENDING ORDER OF THEIR WEIGHT **************
                     msg = s"Ranking $querySize itemsets"
@@ -143,6 +156,7 @@ class Dispale(
                     logger.debug(s" ${msg.replace("ing", "ed")}")
 
                     val iter_results = run_learning()
+                    traceTiming()
                     // val (iter_results, newState) = run_learning()
                     
                     // *************** PRINT LOGS *****************************************************
@@ -154,7 +168,7 @@ class Dispale(
                     //
                     println("\n~~~~~~~~~~~~~~~~~~~~~~\n")
                     //
-                    doLoop(learnedWeight)
+                    doLoop(if(multi.legacy("nolearnedsampling")) initialWeightFunction else learnedWeight)
                     //doLoop(currentIteration + 1, learnedWeight, newState)
             }
         }
@@ -165,6 +179,8 @@ class Dispale(
     //############################################################################################################
 
     override def run_learning(): String = {
+        if(keep)
+            return run_learning_keep()
         
         // ********************** GET SUB-PATTERN *************************************************************
         mine_discriminating_patterns()
@@ -183,18 +199,22 @@ class Dispale(
         //
         // -------------------------------------------------------------------------
         //
+        var start = System.nanoTime()
         learner.toLowerCase match {
             case "scd" =>
                 scd_learn()
             case "ranksvm" | "rank_svm" =>
                 rankSVM_learn()
         }
+        timing("learn") = (System.nanoTime() - start) / 1e6
         //
         // -------------------------------------------------------------------------
         //
         
         traceWeights("weights_after_learning", "clues" -> clueWeightsJson())
+        start = System.nanoTime()
         remove_discriminant_features_from_features_list()
+        timing("fold") = (System.nanoTime() - start) / 1e6
         traceWeights("weights_after_fold")
 
         d = featureMap.featureCount
@@ -210,6 +230,47 @@ class Dispale(
         iter_results
         // (iter_results, HotStart(all_w, z))
     }
+
+    // -kp keep: instead of adding the sub-patterns of this iteration and folding them into the items afterwards,
+    // every selected sub-pattern becomes a permanent presence feature, learned from all the pairs collected so far.
+    // The model is then items + kept sub-patterns, which can represent a preference for items *together*.
+    def run_learning_keep(): String = {
+        mine_discriminating_patterns()
+        val fresh = best_icv_itemsets.filter(s => s.items.nonEmpty && !kept.exists(_.items == s.items))
+        kept ++= fresh
+
+        // features: base + one per kept sub-pattern; earlier weights are kept, new sub-patterns start at 0
+        val old = all_w
+        allFeatures = if(kept.isEmpty) listFeatures else listFeatures :+ KeptSubPatterns(kept.toArray)
+        update_featureMap()
+        all_w = ArrayVector.zeros(featureMap.featureCount)
+        (0 until old.length).foreach { i => all_w(i) = old(i) }
+
+        // every pair, old and new, described with the current features
+        (0 until (currentIteration * params.pairsPerQuery)).foreach { i =>
+            val o = trainingPairs(i)
+            trainingPairs(i) = new RankedPair(o.preferred, o.dispreferred, featureMap)
+        }
+        rankedPairs(currentQuery, querySize).zipWithIndex.foreach {
+            case ((preferred, dispreferred), j) =>
+                trainingPairs(currentIteration * params.pairsPerQuery + j) = new RankedPair(preferred, dispreferred, featureMap)
+        }
+
+        traceWeights("weights_before_learning", "kept" -> keptJson())
+        val start = System.nanoTime()
+        scd_learn()
+        timing("learn") = (System.nanoTime() - start) / 1e6
+        traceWeights("weights_after_learning", "kept" -> keptJson())
+
+        d = featureMap.featureCount
+        learnedWeight = LogisticWeight(params.a, all_w, featureMap)
+        getIterationOutcome(currentIteration, currentQuery, learnedWeight)
+    }
+
+    def keptJson(): String =
+        Trace.arr(kept.zipWithIndex.map { case (s, j) =>
+            Trace.obj("items" -> Trace.ints(s.items.toSeq.sorted), "weight" -> Trace.num(all_w(nbBase + j)))
+        })
 
     //========================================================================================
     //================== LEARNING USING SCD (Stochastic Coordinate Descent) ==================
@@ -231,8 +292,18 @@ class Dispale(
 
         // WarmStart: recompute the inner products of all examples, since the features and
         // the weights changed (discriminating features added, weights apportioned) since the last call
-        val state: ScdState = WarmStart(all_w)
-        current_state = state
+        val state: ScdState =
+            if(multi.legacy("stalez")) {
+                // published code: the inner products of the earlier pairs are reused although the weights and
+                // the features changed since they were computed (sub-pattern features added, weights folded)
+                current_state = HotStart(all_w, z)
+                if(currentIteration > 0) showNewExamplesToSCD(current_state, z, currentIteration, m) else current_state
+            }
+            else {
+                // recompute the inner products of all pairs, since the features and the weights changed
+                current_state = WarmStart(all_w)
+                current_state
+            }
 
         // scdSweeps > 1: further sweeps continue from the weights and inner products of the previous one
         val scd = params.scd.copy( lambda= params.scd.lambda * (currentIteration + 1) )
@@ -289,11 +360,9 @@ class Dispale(
         val hasF = listFeatures_str.contains("F")
         val hasL = listFeatures_str.contains("L")
         if(pooled) {
-            PooledPatterns.setRefPatterns(best_icv_itemsets)
-            PooledFrequency.setRefPatterns(best_icv_itemsets)
-            PooledLength.setRefPatterns(best_icv_itemsets)
-            Array[Features](PooledPatterns) ++ (if(hasF) Array[Features](PooledFrequency) else Array[Features]()) ++
-                (if(hasL) Array[Features](PooledLength) else Array[Features]())
+            Array[Features](PooledPatterns(best_icv_itemsets)) ++
+                (if(hasF) Array[Features](PooledFrequency(best_icv_itemsets)) else Array[Features]()) ++
+                (if(hasL) Array[Features](PooledLength(best_icv_itemsets)) else Array[Features]())
         } else {
             Patterns.setNbElt(best_icv_itemsets.length)
             Patterns.setRefPatterns(best_icv_itemsets)
@@ -336,6 +405,8 @@ class Dispale(
             it = it+1
         }
         icvObject.enumerateItemsets()
+        timing("mine") = icvObject.enumerateNanos / 1e6
+        timing("select") = icvObject.selectNanos / 1e6
         best_icv_itemsets = Array.tabulate(icvObject.getNbSelected()) { j => covert_to_itemset(dataset, icvObject, j) }
         
         best_icv_itemsets.zipWithIndex.foreach { case (s, j) => 
@@ -343,7 +414,9 @@ class Dispale(
         }
         if(Trace.enabled) {
             Trace.event("clues", currentIteration,
-                "candidates" -> icvObject.candidates.size.toString, "selection" -> Trace.str(multi.selection),
+                "candidates_raw" -> icvObject.nbCandidatesRaw.toString, "candidates" -> icvObject.candidates.size.toString,
+                "tied_at_max" -> icvObject.nbTiedAtMax.toString, "top1_matches" -> icvObject.top1Matches.toString,
+                "selection" -> Trace.str(multi.selection),
                 "sub_patterns" -> Trace.arr(best_icv_itemsets.zipWithIndex.map { case (s, j) =>
                     val items = s.items.toSeq.sorted
                     Trace.obj("j" -> j.toString, "items" -> Trace.ints(items),
@@ -409,13 +482,19 @@ class Dispale(
 
     // transfer the weights learned for the discriminating features to the base features, then remember them.
     // For a base item i, with T_i the selected sub-patterns that contain i (T_t: those contained in transaction t):
-    // - separate: d_i = Σ_{j in T_i} w_P(j) / norm, with norm = m (transferNorm "m") or 1 ("none");
+    // - separate: d_i = Σ_{j in T_i} w_P(j) / norm, with norm = requested m ("fixed"), selected m ("selected") or 1 ("none");
     //             frequency / length: d = Σ_j w_F(j) / norm, Σ_j w_L(j) / norm
     // - pooled:   d_i = |T_i| / m · w_P(pool); frequency / length: d = w_F(pool), w_L(pool)
     // then w_i <- aggregation(w_i, d_i): ADD w + η d, LIN w (1 + η d), EXP w e^(η d). Items with T_i empty are unchanged.
     def apportion_discriminating_weights(new_w: ArrayVector, discriminating_weights: Array[Array[Double]]): Unit = {
         val m = best_icv_itemsets.length
-        val norm = if(multi.transferNorm.toLowerCase == "none") 1.0 else m.toDouble
+        // selected: divide by the number of sub-patterns selected in this iteration; fixed: by the requested m
+        // (the same for every iteration); none: no division
+        val norm = multi.transferNorm.toLowerCase match {
+            case "none"     => 1.0
+            case "selected" => m.toDouble
+            case _          => multi.nbSubPatterns.toDouble
+        }
         // contribution of sub-pattern j to a base element it covers
         def share(j: Int): Double = if(pooled) discriminating_weights(0)(0) / m else discriminating_weights(j)(0) / norm
         def total(t: Int): Double =
@@ -497,10 +576,12 @@ class Dispale(
         update_featureMap()
         
         // ********************** Updating weights list by adding discriminating weights **********************
-        // separate: start from the weight learned the last time each sub-pattern was used (0 if never used)
+        // separate: start from the weight learned the last time each sub-pattern was used (0 if never used),
+        //   as the published code does (-cw memory); that weight was already folded into the items, so -cw zero
+        //   starts every sub-pattern feature at 0 instead
         // pooled: the pooled features mean something different every iteration, so they start at 0
         val discriminating_weights = get_discriminating_weights { (t, j) =>
-            if(pooled) 0.0
+            if(pooled || multi.clueWarmStart.toLowerCase == "zero") 0.0
             else {
                 val s = best_icv_itemsets(j).items
                 t match {
@@ -553,7 +634,10 @@ class Dispale(
         // ********************** get discriminating features elements to be removed **************************
         // they are stored right after the base features
         val base = featureMap.featureCount
-        val discriminating_weights = get_discriminating_weights { (t, j) => all_w(base + t*g + j) }
+        // the published code read them at the number of base feature types (allFeatures.size) instead, i.e. it
+        // transferred the weights of the first base features (e.g. item 1) instead of the sub-pattern's
+        val first = if(multi.legacy("weightindex")) allFeatures.size else base
+        val discriminating_weights = get_discriminating_weights { (t, j) => all_w(first + t*g + j) }
         
         // ********************** Updating weights list by removing discriminating weights ********************
         val new_w = ArrayVector.zeros(all_w.length - nbToRemove)
@@ -562,10 +646,11 @@ class Dispale(
         all_w = new_w
         
         // ********************** Update all patterns description by removing the elements ********************
-        if( currentIteration > 0 ){
-            (0 until (currentIteration * params.pairsPerQuery)).foreach {
-                i => trainingPairs(i).update_pairs_new(featureMap.featureCount, 2)
-            }
+        // every pair collected so far, including this iteration's: otherwise this iteration's pairs keep the values
+        // of this iteration's sub-patterns, which the next iteration would read as the values of its own
+        // sub-patterns (the published code, with one sub-pattern feature, dropped that column when adding the next one)
+        (0 until ((currentIteration + 1) * params.pairsPerQuery)).foreach {
+            i => trainingPairs(i).update_pairs_new(featureMap.featureCount, 2)
         }
     }
 

@@ -154,15 +154,26 @@ class MethodSelector{
                 maxOverlap = opt("max-overlap", "0.5").toDouble,
                 minGain = opt("min-gain", "0").toDouble,
                 expansion = opt("expansion", "separate").toLowerCase,
-                transferNorm = opt("transfer-norm", "m").toLowerCase,
-                clueHistory = opt("clue-history", "none").toLowerCase
+                transferNorm = opt("transfer-norm", "fixed").toLowerCase,
+                clueHistory = opt("clue-history", "none").toLowerCase,
+                clueWarmStart = opt("clue-warm-start", "memory").toLowerCase,
+                keepSubPatterns = opt("keep-sub-patterns", "fold").toLowerCase,
+                legacy = {
+                    val all = Set("icvint", "coverinplace", "nodedupe", "stalez", "nolearnedsampling", "weightindex")
+                    val given = opt("legacy", "").toLowerCase.split(",").map(_.trim).filter(_.nonEmpty).toSet
+                    val unknown = given -- all - "all"
+                    require(unknown.isEmpty, s"unknown -lg value(s): ${unknown.mkString(",")} (expected ${all.mkString(",")} or all)")
+                    if(given("all")) all else given
+                }
             )
+            require(Set("fixed", "selected", "none")(multi.transferNorm), s"unknown -tn value: ${multi.transferNorm}")
+            require(Set("memory", "zero")(multi.clueWarmStart), s"unknown -cw value: ${multi.clueWarmStart}")
+            require(Set("fold", "keep")(multi.keepSubPatterns), s"unknown -kp value: ${multi.keepSubPatterns}")
             val combos = opt("combos", "")
-            // initial weights: 0 for the sampling methods (the learned score w.x starts at 0, i.e. uniform sampling,
-            // and is not saturated by the logistic function); 1 for the HUI methods, which use the weights as utilities
-            val initWeight = 
-                if(parse_cmd.hasOption("init-weight")) parse_cmd.getOptionValue("init-weight").toDouble
-                else if(method == "letsip" || method == "dispale") 0.0 else 1.0
+            require(rankFunction.toLowerCase != "comboranker" || combos.trim.nonEmpty,
+                "ComboRanker needs the user's item combinations (-cb), e.g. -cb 29,52;40,58")
+            // initial weight of every feature: 1, as in the published code (the paper states 0)
+            val initWeight = opt("init-weight", "1").toDouble
             
             //****************************************************************************************************************
             // *************************** NOW WE PREPARE THE VARIABLES TO BE USED BY THE PROGRAM ****************************

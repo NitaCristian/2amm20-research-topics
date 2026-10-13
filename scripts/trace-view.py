@@ -74,6 +74,10 @@ def main():
             for cb, ca in zip(b.get("clues", []), a.get("clues", [])):
                 vals = ", ".join(f"{k}: {cb[k]:+.3f} -> {ca[k]:+.3f}" for k in cb if k not in ("j", "items"))
                 print(f"  clue j={cb['j']} {cb['items']}: {vals}")
+            if a.get("kept"):
+                top = sorted(a["kept"], key=lambda k: -abs(k["weight"]))[:args.top]
+                print(f"kept sub-patterns ({len(a['kept'])}), largest weights: " +
+                      ", ".join("{" + ",".join(map(str, k["items"])) + f"}}={k['weight']:+.3f}" for k in top))
             lines, n = changed(b["weights"], a["weights"], args.top)
             print(f"learning changed {n} base weights; largest changes:")
             for l in lines:

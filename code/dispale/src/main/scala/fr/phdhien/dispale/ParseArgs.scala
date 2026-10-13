@@ -191,7 +191,7 @@ object ParseArgs {
         val expansion: Option = new Option("fx", "expansion", true, msg)
         all_options.addOption(expansion)
 
-        msg = "weight transfer normalisation: m (divide by the number of sub-patterns) | none. Default Value : m \n\n"
+        msg = "weight transfer normalisation: fixed (divide by the requested m) | selected (by the number selected in the iteration) | none. Default Value : fixed \n\n"
         val transferNorm: Option = new Option("tn", "transfer-norm", true, msg)
         all_options.addOption(transferNorm)
 
@@ -203,7 +203,7 @@ object ParseArgs {
         val combos: Option = new Option("cb", "combos", true, msg)
         all_options.addOption(combos)
 
-        msg = "initial weight of every feature. Default Value : 0 for letsip and dispale, 1 for lutom and lutomDisc \n\n"
+        msg = "initial weight of every feature. Default Value : 1 (as in the published code) \n\n"
         val initWeight: Option = new Option("iw", "init-weight", true, msg)
         all_options.addOption(initWeight)
 
@@ -214,6 +214,18 @@ object ParseArgs {
         msg = "L1 penalty of SCD at the first iteration (multiplied by iteration+1). Default Value : 0.000001 \n\n"
         val lambda: Option = new Option("la", "lambda", true, msg)
         all_options.addOption(lambda)
+
+        msg = "starting weight of a re-selected sub-pattern feature: memory (its last learned weight, as published) | zero. Default Value : memory \n\n"
+        val clueWarmStart: Option = new Option("cw", "clue-warm-start", true, msg)
+        all_options.addOption(clueWarmStart)
+
+        msg = "sub-pattern features: fold (added each iteration, then folded into the base weights, as published) | keep (every selected sub-pattern stays as a permanent feature). Default Value : fold \n\n"
+        val keepSubPatterns: Option = new Option("kp", "keep-sub-patterns", true, msg)
+        all_options.addOption(keepSubPatterns)
+
+        msg = "errors of the published code to restore, comma separated: icvint, coverinplace, nodedupe, stalez, nolearnedsampling, weightindex, or all. Default Value : none \n\n"
+        val legacy: Option = new Option("lg", "legacy", true, msg)
+        all_options.addOption(legacy)
 
         msg = "file for the structured trace of the run (JSON Lines: query, ranking, sub-patterns, weights before/after learning and folding). Default Value : none \n\n"
         val trace: Option = new Option("tr", "trace", true, msg)

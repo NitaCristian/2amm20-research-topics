@@ -136,6 +136,7 @@ class LetSIP(
                 case params.iterations =>
                     val glf = weight_function.asInstanceOf[LogisticWeight]
                     logTermination(currentIteration, glf)
+                    traceEnd()
                     //
                     println("\n~~~~~~~~~~~~~~~~~~~~~~\n")
                     //
@@ -145,10 +146,12 @@ class LetSIP(
                     var msg = s"Mining $querySize itemsets to query using $oracle"
                     logger.debug(s" ${msg.replace("ing", "ed")}")
                     
+                    val start = System.nanoTime()
                     currentQuery = pattern_miner.run_pattern_mining(
                                                                         queries_array, querySize, queryRetention, 
                                                                         currentIteration, nb_features, all_w.array, weight_function
                                                                     )(rnd)
+                    timing("sample") = (System.nanoTime() - start) / 1e6
                     
                     // *************** RANK PATTERNS BY DESCENDING ORDER OF THEIR WEIGHT **************
                     msg = s"Ranking $querySize itemsets"
@@ -167,6 +170,7 @@ class LetSIP(
                     logger.debug(s" ${msg.replace("ing", "ed")}")
                     
                     val iter_results = run_learning()
+                    traceTiming()
                     
                     // *************** PRINT LOGS *****************************************************
                     logAnaData(currentIteration, currentQuery, learnedWeight, user)
@@ -191,8 +195,8 @@ class LetSIP(
     //################################################## TRACE ###################################################
     //############################################################################################################
 
-    // score w.x of a pattern under the current base weights (what the sampler used)
-    def modelScore(p: Itemset): Double = innerProduct(all_w, features(p, featureMap), Some(nbBase))
+    // score w.x of a pattern under the current weights (what the sampler used)
+    def modelScore(p: Itemset): Double = innerProduct(all_w, features(p, featureMap), Some(featureMap.featureCount))
 
     def patternJson(p: Itemset, extra: (String, String)*): String = {
         val items = p.items.toSeq.sorted
@@ -221,6 +225,19 @@ class LetSIP(
             }))
     }
 
+    // wall-clock time (ms) of the steps of the current iteration: sample, learn, and for DiSPaLe mine, select, fold
+    val timing = scala.collection.mutable.LinkedHashMap[String, Double]()
+
+    def traceTiming(): Unit = if(Trace.enabled) {
+        Trace.event("timing", currentIteration, timing.toSeq.map { case (k, v) => (k + "_ms") -> Trace.num(v) }: _*)
+        timing.clear()
+    }
+
+    // final base weights (the learned model)
+    def traceEnd(extra: (String, String)*): Unit = if(Trace.enabled) {
+        Trace.event("end", currentIteration, (("weights" -> Trace.weights(baseLabels, i => all_w(i), nbBase)) +: extra): _*)
+    }
+
     // base weights; DiSPaLe adds the weights of the discriminating features
     def traceWeights(event: String, extra: (String, String)*): Unit = if(Trace.enabled) {
         Trace.event(event, currentIteration, (("weights" -> Trace.weights(baseLabels, i => all_w(i), nbBase)) +: extra): _*)
@@ -233,12 +250,14 @@ class LetSIP(
     // def run_learning(): (String, ScdState) = {
     def run_learning(): String = {
         traceWeights("weights_before_learning")
+        val start = System.nanoTime()
         learner.toLowerCase match {
             case "scd" =>
                 scd_learn()
             case "ranksvm" | "rank_svm" =>
                 rankSVM_learn()
         }
+        timing("learn") = (System.nanoTime() - start) / 1e6
         traceWeights("weights_after_learning")
         
         // ********************** UPDATE THE LEARNED FUNCTION *************************************************
@@ -388,8 +407,9 @@ class LetSIP(
         //val m = params.pairsPerQuery
         //val trainingExamples = trainingPairs.view(currentIteration*m, (currentIteration+1)*m)
 
-        val state: ScdState = 
-            if(currentIteration > 0) showNewExamplesToSCD(current_state, z, currentIteration, m) else current_state
+        // recompute the inner products of all pairs from the current weights, as DiSPaLe does; for LetSIP this
+        // equals continuing from the stored ones (features and weights do not change between iterations)
+        val state: ScdState = WarmStart(all_w)
 
         // scdSweeps > 1: further sweeps continue from the weights and inner products of the previous one
         val scd = params.scd.copy( lambda = params.scd.lambda * (currentIteration + 1) )

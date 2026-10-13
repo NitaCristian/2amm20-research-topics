@@ -69,8 +69,11 @@ package object dispale {
                                     maxOverlap: Double = 0.5,          // coverage: max |correlation| between covers
                                     minGain: Double = 0.0,             // gain / pairs: stop below this share of the total
                                     expansion: String = "separate",    // separate: features per sub-pattern | pooled
-                                    transferNorm: String = "m",        // divide the transferred weights by m | none
-                                    clueHistory: String = "none"       // none: earlier pairs get 0 for new clues | full
+                                    transferNorm: String = "fixed",    // divide the transferred weights by: fixed (requested m) | selected (number selected) | none
+                                    clueHistory: String = "none",      // none: earlier pairs get 0 for new clues | full
+                                    clueWarmStart: String = "memory",  // memory: a re-selected sub-pattern starts from its last weight (published) | zero
+                                    keepSubPatterns: String = "fold",  // fold: per-iteration features folded into the items (published) | keep: permanent features
+                                    legacy: Set[String] = Set()        // errors of the published code to restore: icvint, coverinplace, nodedupe, stalez, nolearnedsampling, weightindex
                                 )
 
     //############################################################################################################

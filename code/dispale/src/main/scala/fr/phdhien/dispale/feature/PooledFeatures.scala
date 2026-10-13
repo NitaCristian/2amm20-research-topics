@@ -17,27 +17,22 @@ import be.kuleuven.pmlib.itemsets.Itemset
  *   PooledFrequency : Σ_{j : S_j ⊆ X} support(S_j) / |D|
  *   PooledLength    : Σ_{j : S_j ⊆ X} |S_j| / |I|
  */
-object PooledPatterns extends FeatureMapGenerator {
-    var refPatterns: Array[Itemset] = null
+// built afresh every iteration from the selected sub-patterns (no shared mutable state)
+final case class PooledPatterns(refPatterns: Array[Itemset]) extends FeatureMapGenerator {
     override def toFeatureMap(dataset: Dataset[Set[Int]]) =
         PooledFeature("PooledPatterns", refPatterns, _ => 1.0, refPatterns.length.max(1).toDouble)
-    override def setRefPatterns(patterns: Array[Itemset]) = { refPatterns = patterns }
     override def toString: String = "PooledPatterns"
 }
 
-object PooledFrequency extends FeatureMapGenerator {
-    var refPatterns: Array[Itemset] = null
+final case class PooledFrequency(refPatterns: Array[Itemset]) extends FeatureMapGenerator {
     override def toFeatureMap(dataset: Dataset[Set[Int]]) =
         PooledFeature("PooledFrequency", refPatterns, s => s.size.toDouble, dataset.size.toDouble)
-    override def setRefPatterns(patterns: Array[Itemset]) = { refPatterns = patterns }
     override def toString: String = "PooledFrequency"
 }
 
-object PooledLength extends FeatureMapGenerator {
-    var refPatterns: Array[Itemset] = null
+final case class PooledLength(refPatterns: Array[Itemset]) extends FeatureMapGenerator {
     override def toFeatureMap(dataset: Dataset[Set[Int]]) =
         PooledFeature("PooledLength", refPatterns, s => s.description.length.toDouble, dataset.attributes.size.toDouble)
-    override def setRefPatterns(patterns: Array[Itemset]) = { refPatterns = patterns }
     override def toString: String = "PooledLength"
 }
 
