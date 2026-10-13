@@ -55,6 +55,8 @@ class MethodSelector{
     //***********************************************************
     var aggregation: String = "lin"
     //***********************************************************
+    var multi: MultiDiscParams = MultiDiscParams()
+    //***********************************************************
     var oracle: String = "flexics"
     var algo: String = "eflexics"
     var learner: String = "scd"
@@ -99,7 +101,7 @@ class MethodSelector{
                         params=params, listFeatures=allFeatures, listFeatures_count=allFeatures_count, 
                         learner=learner, listFeatures_str=allFeatures_str_tab, minsup=minsup, 
                         oracle=oracle, algo=algo, aggregation_function=aggregation, 
-                        user=ranker, seed=seed
+                        user=ranker, seed=seed, multi=multi
                     )
         }
         // letsip_instance
@@ -144,6 +146,23 @@ class MethodSelector{
             aggregation = if(parse_cmd.hasOption("aggregation")) parse_cmd.getOptionValue("aggregation").toLowerCase else "lin"
             val features_update = if(parse_cmd.hasOption("features-update")) parse_cmd.getOptionValue("features-update") else "ALL"
             val weightsFile = if(parse_cmd.hasOption("weights")) parse_cmd.getOptionValue("weights") else null
+            def opt(name: String, default: String) = if(parse_cmd.hasOption(name)) parse_cmd.getOptionValue(name) else default
+            multi = MultiDiscParams(
+                nbSubPatterns = opt("nb-disc", "1").toInt,
+                selection = opt("selection", "gain").toLowerCase,
+                redundancyWeight = opt("redundancy-weight", "1.0").toDouble,
+                maxOverlap = opt("max-overlap", "0.5").toDouble,
+                minGain = opt("min-gain", "0").toDouble,
+                expansion = opt("expansion", "separate").toLowerCase,
+                transferNorm = opt("transfer-norm", "m").toLowerCase,
+                clueHistory = opt("clue-history", "none").toLowerCase
+            )
+            val combos = opt("combos", "")
+            // initial weights: 0 for the sampling methods (the learned score w.x starts at 0, i.e. uniform sampling,
+            // and is not saturated by the logistic function); 1 for the HUI methods, which use the weights as utilities
+            val initWeight = 
+                if(parse_cmd.hasOption("init-weight")) parse_cmd.getOptionValue("init-weight").toDouble
+                else if(method == "letsip" || method == "dispale") 0.0 else 1.0
             
             //****************************************************************************************************************
             // *************************** NOW WE PREPARE THE VARIABLES TO BE USED BY THE PROGRAM ****************************
@@ -155,6 +174,7 @@ class MethodSelector{
                 case "frequencyranker"         => FrequencyRanker
                 case "surprisingnessranker"    => SurprisingnessRanker(dataset)
                 case "gaussianranker"	       => GaussianRanker(dataset, seed, weightsFile) //GaussianRanker(dataset,seed)
+                case "comboranker"             => ComboRanker(dataset, combos)
                 case _                         => FrequencyRanker // default case
             }
             //****************************************************************************************************************
@@ -221,7 +241,7 @@ class MethodSelector{
             val features = feature.compose(allFeatures:_*)
             val scdParams = ScdParameters(iterations = FixedIterations(nb_ft), features_update = ft_update_all)
             params = Parameters(tilt=tilt, featureMap=features, scd=scdParams, queryRetention=queryRetention,
-                                    iterations=nb_iterations, querySize=querySize, eta=eta)
+                                    iterations=nb_iterations, querySize=querySize, eta=eta, initWeight=initWeight)
             //****************************************************************************************************************
             //****************************************************************************************************************
         

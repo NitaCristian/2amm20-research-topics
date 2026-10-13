@@ -10,9 +10,11 @@
 package fr.phdhien.dispale;
 
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.BitSet;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
 
 import fr.phdhien.dispale.tools.DataSet;
@@ -31,6 +33,27 @@ public class BestICVSubset {
 	public BitSet[] allTransactions;
 	public BitSet bestICVSubsetBitSet;
 	public HashSet<Integer> bestICVSubset;
+	
+	// multiple discriminant sub-patterns
+	// nbSubPatterns: maximum number of sub-patterns to select (m)
+	// selector: the rule that picks them among the candidates (see SubPatternSelector)
+	public int nbSubPatterns = 1;
+	public SubPatternSelector selector = new SubPatternSelector.Top();
+	public List<Candidate> candidates = new ArrayList<Candidate>();
+	public List<Candidate> selected = new ArrayList<Candidate>();
+	
+	// a sub-itemset, the query patterns containing it (cover) and its ICV
+	public static class Candidate {
+		public final BitSet items;
+		public final BitSet cover;
+		public final double icv;
+		
+		public Candidate(BitSet items, BitSet cover, double icv) {
+			this.items = items;
+			this.cover = cover;
+			this.icv = icv;
+		}
+	}
 	
 	public BestICVSubset(int nbElem, String datasetPath) {
 		this.iter = 0;
@@ -66,8 +89,13 @@ public class BestICVSubset {
 		iter++;
 	}
 	
+	public void setSelection(int nbSubPatterns, SubPatternSelector selector) {
+		this.nbSubPatterns = Math.max(1, nbSubPatterns);
+		this.selector = selector;
+	}
+	
 	public double avg(int[] ranks) {
-		int avg = 0;
+		double avg = 0;
 		for(int i=0; i<ranks.length; i++) {
 			avg += ranks[i];
 		}
@@ -131,6 +159,8 @@ public class BestICVSubset {
 			
 			double icv = interclassVariance(all_ranks, coveredRank, unCoveredRank);
 			subItemsets.add(it);
+			if(icv > 0)
+				candidates.add(new Candidate((BitSet) it.clone(), (BitSet) currentPattern.clone(), icv));
 			if(icv > highestICV) {
 				highestICV = icv;
 				top1Pattern = (BitSet) it.clone();
@@ -162,7 +192,12 @@ public class BestICVSubset {
 						BitSet new_subItemset = (BitSet) sub.clone();
 						new_subItemset.set(item);
 						
-						BitSet it = new BitSet(), cov = tID.get(sub);
+						// the same sub-itemset can be reached from several parents: evaluate it only once
+						if(nextSubItemsets.contains(new_subItemset))
+							continue;
+						
+						// clone: `and' must not modify the stored cover of `sub'
+						BitSet it = new BitSet(), cov = (BitSet) tID.get(sub).clone();
 						it.set(item);
 						//cov.intersects(tID.get(it));
 						cov.and(tID.get(it));
@@ -185,6 +220,8 @@ public class BestICVSubset {
 							}
 						
 							double icv = interclassVariance(all_ranks, coveredRank, unCoveredRank);
+							if(icv > 0)
+								candidates.add(new Candidate((BitSet) new_subItemset.clone(), (BitSet) cov.clone(), icv));
 							if(icv > highestICV) {
 								highestICV = icv;
 								top1Pattern = (BitSet) new_subItemset.clone();
@@ -220,6 +257,8 @@ public class BestICVSubset {
 			bestICVSubsetBitSet.set(i);
 		}
 		
+		selectSubPatterns();
+		
 		//BitSet cov_tempo = dataset.covers.getCoverPOP(
 		//			new TItemSet(bestICVSubsetBitSet)).getListTransactions();
 		//System.out.println("~~~~~~~~~");
@@ -227,6 +266,57 @@ public class BestICVSubset {
 		//System.out.println("~~~~~~~~~\n");
 		
 		getAllTransactions();
+	}
+	
+	// order used to break ICV ties: higher ICV first, then longer sub-pattern first
+	// (List.sort is stable, so remaining ties keep the enumeration order, as the original top-1 search did)
+	private static int compareCandidates(Candidate a, Candidate b) {
+		int c = Double.compare(b.icv, a.icv);
+		if(c != 0)
+			return c;
+		return Integer.compare(b.items.cardinality(), a.items.cardinality());
+	}
+	
+	// select up to `nbSubPatterns' sub-patterns among the candidates with the configured rule;
+	// every rule starts with the highest-ICV candidate (the original DiSPaLe sub-pattern)
+	public void selectSubPatterns() {
+		selected.clear();
+		List<Candidate> sorted = new ArrayList<Candidate>(candidates);
+		sorted.sort(BestICVSubset::compareCandidates);
+		
+		if(sorted.isEmpty()) {
+			// no discriminating sub-pattern: keep the original behaviour (the empty sub-pattern)
+			selected.add(new Candidate(new BitSet(), new BitSet(), 0.0));
+			return;
+		}
+		selected.addAll(selector.select(sorted, nbSubPatterns, iter));
+	}
+	
+	public int getNbSelected() {
+		return selected.size();
+	}
+	
+	public double getSolutionICV(int j) {
+		return selected.get(j).icv;
+	}
+	
+	public Set<Integer> getSolutionItems(int j){
+		Set<Integer> sol = new HashSet<Integer>();
+		BitSet items = selected.get(j).items;
+		for (int item=items.nextSetBit(0); item!=-1; item=items.nextSetBit(item+1)) {
+			sol.add(item);
+		}
+		return sol;
+	}
+	
+	// transactions of the dataset containing the j-th selected sub-pattern
+	public Set<Integer> getSolutionCover(int j) {
+		HashSet<Integer> currentCover = new HashSet<Integer>();
+		BitSet cov = dataset.covers.getCoverPOP(
+					new TItemSet(selected.get(j).items)).getListTransactions();
+		for (int tr=cov.nextSetBit(0); tr!=-1; tr=cov.nextSetBit(tr+1))
+			currentCover.add(tr);
+		return currentCover;
 	}
 	
 	public void getAllTransactions() {
@@ -271,6 +361,8 @@ public class BestICVSubset {
 		iter = 0;
 		currentPosition = 0;
 		bestICVSubset.clear();
+		candidates.clear();
+		selected.clear();
 		for(int i=0; i<nbElem; i++) {
 			all_ranks[i] = -1;
 			all_itemsets[i].clear();

@@ -88,7 +88,7 @@ class LetSIP(
     var d: Int = featureMap.featureCount
     //************************************************************************************************************
     val loss = LogisticLoss
-    var all_w = ArrayVector.ones(nb_features)
+    var all_w = new ArrayVector(Array.fill(nb_features)(params.initWeight), nb_features)
     var z = ArrayVector.zeros(params.iterations * params.pairsPerQuery)
     var learnedWeight: LogisticWeight = LogisticWeight(params.a, all_w, featureMap)
     var current_state: ScdState = HotStart(all_w, z)

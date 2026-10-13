@@ -61,6 +61,21 @@ package object dispale {
     //############################################################################################################
     //############################################################################################################
 
+    // settings of the multi sub-pattern extension of DiSPaLe
+    final case class MultiDiscParams(
+                                    nbSubPatterns: Int = 1,            // m: max sub-patterns per iteration (1 = DiSPaLe)
+                                    selection: String = "gain",        // top | complementary | coverage | gain | pairs
+                                    redundancyWeight: Double = 1.0,    // complementary: redundancy penalty, 0..1
+                                    maxOverlap: Double = 0.5,          // coverage: max |correlation| between covers
+                                    minGain: Double = 0.0,             // gain / pairs: stop below this share of the total
+                                    expansion: String = "separate",    // separate: features per sub-pattern | pooled
+                                    transferNorm: String = "m",        // divide the transferred weights by m | none
+                                    clueHistory: String = "none"       // none: earlier pairs get 0 for new clues | full
+                                )
+
+    //############################################################################################################
+    //############################################################################################################
+
     final case class Parameters(
                                     querySize: Int = 3,
                                     queryRetention: Int = 0,
@@ -68,7 +83,8 @@ package object dispale {
                                     tilt: Double = 10,
                                     eta: Double = 0.5,
                                     var featureMap: Features,
-                                    scd: ScdParameters
+                                    scd: ScdParameters,
+                                    initWeight: Double = 1.0     // initial weight of every feature
                                 ) {
         //
         val pairsPerQuery: Int = querySize * (querySize - 1) / 2
@@ -121,13 +137,12 @@ package object dispale {
         }
         
         def update_pairs_new(count: Int, id_update: Int) = { 
-            // update itemset description by adding or removing one new element
-            // if id_update==1 ==> add one new element
-            // if id_update==2 ==> remove one new element
+            // update itemset description by adding or removing new elements (count = new size)
+            // if id_update==1 ==> add new elements (set to 0)
+            // if id_update==2 ==> remove the last elements
             if (id_update == 1){
                 val dv = Array.ofDim[Double](count)
-                (0 until (count-1)).foreach { i => dv(i) = diffVector(i) }
-                dv(count-1) = 0
+                (0 until math.min(diffVector.length, count)).foreach { i => dv(i) = diffVector(i) }
                 diffVector = dv
             }
             else{

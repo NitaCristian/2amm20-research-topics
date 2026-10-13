@@ -1,0 +1,445 @@
+'''
+Experiment: does using several discriminating sub-patterns per iteration (-nd > 1)
+improve the preference model learned by DiSPaLe?
+
+  python3 scripts/multi-disc-experiment.py run  [--xp NAME]  # launch all runs (logs in results/xp-NAME)
+  python3 scripts/multi-disc-experiment.py eval [--xp NAME]  # evaluate the learned models
+  python3 scripts/multi-disc-experiment.py variety [--xp NAME]  # how varied the shown patterns are
+  python3 scripts/multi-disc-experiment.py check-user           # can an items-only model learn the combination user?
+  python3 scripts/multi-disc-experiment.py prefold [--xp NAME]  # evaluate the model before the clues are folded
+
+Experiments (--xp):
+  multidisc: number / selection of sub-patterns, with the original initial weights (1) and LIN aggregation
+  sampling:  original initial weights (1, LIN aggregation) vs initial weights 0 (ADD aggregation)
+  combo:     the two-combination user (ComboRanker) with every selection rule, plus a Gaussian-user control
+  history:   the two-combination user with clue features computed for all earlier pairs (-ch full)
+
+Evaluation: the weights learned after each iteration (ITER_WEIGHTS lines, Items features only)
+score a fixed test set of frequent itemsets that were never shown to the user; we measure
+how well this score agrees with the simulated user (surprisingness):
+  - pairwise accuracy: % of test pattern pairs ordered as the user would order them
+  - precision@10%: overlap between the user's top 10% and the model's top 10%
+and the quality of the patterns shown to the user:
+  - mean surprisingness of the queried patterns over the last 5 iterations
+'''
+
+import argparse
+import itertools
+import math
+import os
+import random
+import re
+import statistics
+import subprocess
+from concurrent.futures import ThreadPoolExecutor
+
+ROOT = os.path.realpath(os.path.join(os.path.dirname(os.path.realpath(__file__)), os.pardir))
+DATASETS = {"chess": 0.5}      # dataset -> minimum frequency
+ITERATIONS = 20
+SEEDS = [1, 2, 3, 4, 5]
+OLD = ["-iw", "1", "-ag", "LIN"]  # original initial weights and aggregation
+# experiment -> (query sizes, {config name -> extra arguments})
+EXPERIMENTS = {
+    "multidisc": ([5, 10], {
+        "letsip":          ["-m", "letsip"] + OLD,
+        "dispale-m1":      ["-m", "dispale", "-nd", "1"] + OLD,
+        "dispale-m3-top":  ["-m", "dispale", "-nd", "3", "-sel", "top"] + OLD,
+        "dispale-m3-comp": ["-m", "dispale", "-nd", "3", "-sel", "complementary"] + OLD,
+        "dispale-m5-comp": ["-m", "dispale", "-nd", "5", "-sel", "complementary"] + OLD,
+    }),
+    "sampling": ([10], {
+        "letsip-w1":          ["-m", "letsip"] + OLD,
+        "letsip-w0":          ["-m", "letsip", "-iw", "0"],
+        "dispale-m1-w1":      ["-m", "dispale", "-nd", "1"] + OLD,
+        "dispale-m1-w0":      ["-m", "dispale", "-nd", "1", "-iw", "0", "-ag", "ADD"],
+        "dispale-m3-comp-w1": ["-m", "dispale", "-nd", "3", "-sel", "complementary"] + OLD,
+        "dispale-m3-comp-w0": ["-m", "dispale", "-nd", "3", "-sel", "complementary", "-iw", "0", "-ag", "ADD"],
+    }),
+}
+COMBOS = "29,52;40,58"  # chess: two separate liked item pairs (see check-user)
+GAUSSIAN_WEIGHTS = os.path.join(ROOT, "results", "xp-combo", "gaussian-weights.txt")
+COMBO = ["-r", "ComboRanker", "-cb", COMBOS]
+GAUSS = ["-r", "GaussianRanker", "-w", GAUSSIAN_WEIGHTS]
+EXPERIMENTS["combo"] = ([10], {
+    "combo-letsip":      ["-m", "letsip"] + COMBO,
+    "combo-m1":          ["-m", "dispale", "-nd", "1"] + COMBO,
+    "combo-m3-top":      ["-m", "dispale", "-nd", "3", "-sel", "top"] + COMBO,
+    "combo-m3-mmr":      ["-m", "dispale", "-nd", "3", "-sel", "complementary"] + COMBO,
+    "combo-m3-coverage": ["-m", "dispale", "-nd", "3", "-sel", "coverage"] + COMBO,
+    "combo-m3-gain":     ["-m", "dispale", "-nd", "3", "-sel", "gain"] + COMBO,
+    "combo-m3-pairs":    ["-m", "dispale", "-nd", "3", "-sel", "pairs"] + COMBO,
+    "combo-m3-pooled":   ["-m", "dispale", "-nd", "3", "-sel", "gain", "-fx", "pooled"] + COMBO,
+    "gauss-letsip":      ["-m", "letsip"] + GAUSS,
+    "gauss-m1":          ["-m", "dispale", "-nd", "1"] + GAUSS,
+    "gauss-m3-mmr":      ["-m", "dispale", "-nd", "3", "-sel", "complementary"] + GAUSS,
+    "gauss-m3-gain":     ["-m", "dispale", "-nd", "3", "-sel", "gain"] + GAUSS,
+})
+FULL = ["-ch", "full"]
+EXPERIMENTS["history"] = ([10], {
+    "combo-letsip":         ["-m", "letsip"] + COMBO,
+    "combo-m1":             ["-m", "dispale", "-nd", "1"] + COMBO,
+    "combo-m3-gain":        ["-m", "dispale", "-nd", "3", "-sel", "gain"] + COMBO,
+    "combo-m1-full":        ["-m", "dispale", "-nd", "1"] + COMBO + FULL,
+    "combo-m3-top-full":    ["-m", "dispale", "-nd", "3", "-sel", "top"] + COMBO + FULL,
+    "combo-m3-mmr-full":    ["-m", "dispale", "-nd", "3", "-sel", "complementary"] + COMBO + FULL,
+    "combo-m3-gain-full":   ["-m", "dispale", "-nd", "3", "-sel", "gain"] + COMBO + FULL,
+    "combo-m3-pairs-full":  ["-m", "dispale", "-nd", "3", "-sel", "pairs"] + COMBO + FULL,
+})
+XP_DIR, QUERY_SIZES, CONFIGS = None, None, None
+
+
+def select_xp(name):
+    global XP_DIR, QUERY_SIZES, CONFIGS
+    XP_DIR = os.path.join(ROOT, "results", "xp-" + name)
+    QUERY_SIZES, CONFIGS = EXPERIMENTS[name]
+TEST_SET_SIZE = 1000
+PARALLEL = 6
+
+
+def log_path(data, k, config, seed):
+    return os.path.join(XP_DIR, data, f"k{k}", config, f"seed{seed}.log")
+
+
+def run_one(job):
+    data, freq, k, config, seed = job
+    out = log_path(data, k, config, seed)
+    if os.path.exists(out) and "FINAL_WEIGHTS" in open(out).read():
+        return f"skip {out}"
+    os.makedirs(os.path.dirname(out), exist_ok=True)
+    cmd = ["python3", os.path.join(ROOT, "scripts", "test-program.py"), "-d", data, "-f", str(freq),
+           "-k", str(k), "-i", str(ITERATIONS), "-o", "flexics", "-a", "eflexics", "-F", "Items",
+           "-l", "0", "-s", str(seed), "-to", "1800"] + CONFIGS[config]
+    # own temp dir per run: the native library loader deletes the libraries other JVMs extracted to the temp dir
+    tmp = os.path.join(XP_DIR, "tmp", f"{data}-k{k}-{config}-{seed}")
+    os.makedirs(tmp, exist_ok=True)
+    env = dict(os.environ, JAVA_TOOL_OPTIONS=f"-Djava.io.tmpdir={tmp}")
+    with open(out, "w") as f:
+        subprocess.run(cmd, cwd=ROOT, stdout=f, stderr=subprocess.STDOUT, env=env)
+    return f"done {out}"
+
+
+def make_gaussian_weights(n_items=76, seed=2026):
+    # fixed random item weights for the Gaussian control user (read by GaussianRanker via -w)
+    if os.path.exists(GAUSSIAN_WEIGHTS):
+        return
+    os.makedirs(os.path.dirname(GAUSSIAN_WEIGHTS), exist_ok=True)
+    rnd = random.Random(seed)
+    with open(GAUSSIAN_WEIGHTS, "w") as f:
+        f.write("\n".join(f"{rnd.gauss(0, 1):.6f}" for _ in range(n_items)) + "\n")
+
+
+def run():
+    make_gaussian_weights()
+    jobs = [(d, f, k, c, s) for (d, f) in DATASETS.items() for k in QUERY_SIZES for c in CONFIGS for s in SEEDS]
+    with ThreadPoolExecutor(PARALLEL) as ex:
+        for i, msg in enumerate(ex.map(run_one, jobs), 1):
+            print(f"[{i}/{len(jobs)}] {msg}", flush=True)
+
+
+#=====================================================================================
+
+def load_transactions(data):
+    # CP4IM file: one transaction per line, item ids followed by the class label (dropped)
+    rows = [l.split()[:-1] for l in open(os.path.join(ROOT, "data", data + ".txt"))
+            if l.strip() and not l.startswith("@")]
+    covers = {}
+    for t, row in enumerate(rows):
+        for i in row:
+            covers[int(i)] = covers.get(int(i), 0) | (1 << t)
+    return len(rows), covers
+
+
+def support(pattern, covers):
+    c = None
+    for i in pattern:
+        c = covers[i] if c is None else c & covers[i]
+    return bin(c).count("1")
+
+
+def surprisingness(pattern, n, covers):
+    # same measure as SurprisingnessRanker
+    expected = 1.0
+    for i in pattern:
+        expected *= support([i], covers) / n
+    return max(0.0, support(pattern, covers) / n - expected)
+
+
+def make_test_set(data, freq, size, seed=12345):
+    # random frequent itemsets of length 2..10 (like the queried patterns): grown one random item
+    # at a time, an item being added only if the itemset stays frequent
+    n, covers = load_transactions(data)
+    minsup = freq * n
+    frequent = [i for i in covers if support([i], covers) >= minsup]
+    rnd = random.Random(seed)
+    test = set()
+    while len(test) < size:
+        length = rnd.randint(2, 10)
+        p = [rnd.choice(frequent)]
+        cover = covers[p[0]]
+        for i in rnd.sample(frequent, len(frequent)):
+            if len(p) == length:
+                break
+            if i not in p and bin(cover & covers[i]).count("1") >= minsup:
+                p.append(i)
+                cover &= covers[i]
+        p = frozenset(p)
+        if len(p) >= 2 and p not in test:
+            test.add(p)
+    test = sorted(test, key=sorted)
+    return test, [surprisingness(p, n, covers) for p in test]
+
+
+def parse_combos(spec):
+    combos = []
+    for part in filter(None, (x.strip() for x in spec.split(";"))):
+        items, _, w = part.partition(":")
+        combos.append((frozenset(int(i) for i in items.split(",")), float(w) if w else 1.0))
+    return combos
+
+
+def user_truth(args, data, test):
+    # ground-truth score of every test pattern for the simulated user a configuration runs with
+    n, covers = load_transactions(data)
+    user = args[args.index("-r") + 1] if "-r" in args else "SurprisingnessRanker"
+    surpr = [surprisingness(p, n, covers) for p in test]
+    if user == "ComboRanker":
+        combos = parse_combos(args[args.index("-cb") + 1] if "-cb" in args else COMBOS)
+        return "combo", [sum(w for S, w in combos if S <= p) + 0.01 * s for p, s in zip(test, surpr)]
+    if user == "GaussianRanker":
+        w = [float(x) for x in open(args[args.index("-w") + 1]) if x.strip()]
+        return "gaussian", [sum(w[i] for i in p) * support(p, covers) for p in test]
+    return "surprisingness", surpr
+
+
+def pairwise_accuracy(pred, truth):
+    good = total = 0.0
+    for a, b in itertools.combinations(range(len(truth)), 2):
+        if truth[a] == truth[b]:
+            continue
+        total += 1
+        d = (pred[a] - pred[b]) * (truth[a] - truth[b])
+        good += 1 if d > 0 else (0.5 if d == 0 else 0)
+    return good / total
+
+
+def precision_at(pred, truth, frac=0.1):
+    k = max(1, int(len(truth) * frac))
+    top_truth = set(sorted(range(len(truth)), key=lambda i: -truth[i])[:k])
+    top_pred = set(sorted(range(len(pred)), key=lambda i: -pred[i])[:k])
+    return len(top_truth & top_pred) / k
+
+
+def shown_quality(path, last=5):
+    # mean surprisingness (the ranker's score, 4th field of the query lines) of the patterns shown
+    # during the last `last' iterations
+    scores = []
+    for line in open(path):
+        m = re.search(r"INFO  \w+ - (\d+);\d+;\d+;([\d.E-]+);", line)
+        if m and int(m.group(1)) >= ITERATIONS - last:
+            scores.append(float(m.group(2)))
+    return statistics.mean(scores) if scores else None
+
+
+def parse_iter_weights(path):
+    weights = {}
+    for line in open(path):
+        if line.startswith("ITER_WEIGHTS;"):
+            parts = line.strip().split(";")
+            weights[int(parts[1])] = [float(x) for x in parts[2:]]
+    return weights
+
+
+def shown_queries(path):
+    # iteration -> list of item sets shown in that query
+    queries = {}
+    for line in open(path):
+        m = re.search(r"INFO  \w+ - (\d+);\d+;\d+;[^;]*;[^;]*;[^;]*;([\d+]+)\s*$", line)
+        if m:
+            queries.setdefault(int(m.group(1)), []).append(frozenset(map(int, m.group(2).split("+"))))
+    return queries
+
+
+def jaccard(a, b):
+    return len(a & b) / len(a | b) if a | b else 0.0
+
+
+def variety():
+    # Does sampling with the learned model narrow what is shown (a "bubble")?
+    # Over the last 10 iterations of each run:
+    #  - distinct items: how many different items appear in any shown pattern
+    #  - top-5 share: share of all item occurrences taken by the 5 most shown items
+    #  - similarity: mean Jaccard similarity between shown patterns (within and across queries)
+    # Iteration 1 is sampled uniformly in every run, so it is the "no model" reference.
+    for data, freq in DATASETS.items():
+        for k in QUERY_SIZES:
+            print(f"\n## {data}, k = {k}, last 10 iterations, mean over {len(SEEDS)} seeds")
+            print("config".ljust(20) + "distinct items".rjust(16) + "top-5 share".rjust(13) + "similarity".rjust(12) + "  (iteration 1: distinct, similarity)")
+            for config in CONFIGS:
+                rows, first = [], []
+                for seed in SEEDS:
+                    path = log_path(data, k, config, seed)
+                    if not os.path.exists(path):
+                        continue
+                    q = shown_queries(path)
+                    if not q:
+                        continue
+                    last = [p for it in sorted(q)[-10:] for p in q[it]]
+                    counts = {}
+                    for p in last:
+                        for i in p:
+                            counts[i] = counts.get(i, 0) + 1
+                    top5 = sum(sorted(counts.values(), reverse=True)[:5]) / sum(counts.values())
+                    sim = statistics.mean(jaccard(a, b) for a, b in itertools.combinations(last, 2))
+                    rows.append((len(counts), top5, sim))
+                    f = q[min(q)]
+                    first.append((len(set().union(*f)), statistics.mean(jaccard(a, b) for a, b in itertools.combinations(f, 2))))
+                if not rows:
+                    continue
+                mean = lambda v: statistics.mean(v)
+                print(config.ljust(20) + f"{mean([r[0] for r in rows]):.1f}".rjust(16) + f"{100 * mean([r[1] for r in rows]):.1f}%".rjust(13)
+                      + f"{mean([r[2] for r in rows]):.3f}".rjust(12)
+                      + f"  ({mean([f[0] for f in first]):.1f}, {mean([f[1] for f in first]):.3f})")
+
+
+def evaluate():
+    for data, freq in DATASETS.items():
+        test, _ = make_test_set(data, freq, TEST_SET_SIZE)
+        truths = {}
+        print(f"\n### {data} (minfreq {freq}), test set: {len(test)} frequent itemsets")
+        for k in QUERY_SIZES:
+            print(f"\n## k = {k}, {ITERATIONS} iterations, {len(SEEDS)} seeds (mean ± std)")
+            checkpoints = sorted({0, 4, 9, ITERATIONS - 1})
+            header = ("config".ljust(20) + "".join(f"acc@it{c + 1}".rjust(15) for c in checkpoints)
+                      + "P@10% final".rjust(16) + "shown score".rjust(16) + "  user")
+            print(header)
+            for config in CONFIGS:
+                user, truth = user_truth(CONFIGS[config], data, test)
+                accs = {c: [] for c in checkpoints}
+                precs, shown = [], []
+                for seed in SEEDS:
+                    path = log_path(data, k, config, seed)
+                    if not os.path.exists(path):
+                        continue
+                    weights = parse_iter_weights(path)
+                    if shown_quality(path) is not None:
+                        shown.append(shown_quality(path))
+                    for c in checkpoints:
+                        if c in weights:
+                            w = weights[c]
+                            pred = [sum(w[i] for i in p) for p in test]
+                            accs[c].append(pairwise_accuracy(pred, truth))
+                    if ITERATIONS - 1 in weights:
+                        w = weights[ITERATIONS - 1]
+                        precs.append(precision_at([sum(w[i] for i in p) for p in test], truth))
+                fmt = lambda v: (f"{100 * statistics.mean(v):.1f}±{100 * statistics.stdev(v):.1f}"
+                                 if len(v) > 1 else (f"{100 * v[0]:.1f}" if v else "-"))
+                fmt3 = lambda v: f"{statistics.mean(v):.4f}±{statistics.stdev(v):.4f}" if len(v) > 1 else "-"
+                print(config.ljust(20) + "".join(fmt(accs[c]).rjust(15) for c in checkpoints) + fmt(precs).rjust(16)
+                      + fmt3(shown).rjust(16) + "  " + user)
+
+
+def parse_prefold(path):
+    # iteration -> (weights right after learning, clues of that iteration); the weights are the SCD
+    # "**it+w;w;..." line: base features first, then one weight per clue (one in total when pooled)
+    weights, clues = {}, {}
+    for line in open(path):
+        m = re.match(r"\*\*(\d+)\+(.*)", line)
+        if m:
+            weights[int(m.group(1))] = [float(x) for x in m.group(2).split(";") if x.strip()]
+        if line.startswith("++"):
+            m = re.match(r"\+\+(\d+)-(\d+)-Set\(([^)]*)\)", line)
+            if m:
+                clues.setdefault(int(m.group(1)), []).append(frozenset(int(i) for i in m.group(3).split(",") if i.strip()))
+    return {it: (weights[it], clues.get(it, [])) for it in weights}
+
+
+def prefold_scores(test, w, clues, pooled, n_base=76):
+    # score = item weights + the clue weights of that iteration (what the learner knew before folding)
+    base = [sum(w[i] for i in p) for p in test]
+    if not clues:
+        return base
+    if pooled:
+        v = w[n_base]
+        return [b + v * sum(1 for S in clues if S <= p) / len(clues) for b, p in zip(base, test)]
+    return [b + sum(w[n_base + j] for j, S in enumerate(clues) if S <= p) for b, p in zip(base, test)]
+
+
+def prefold():
+    for data, freq in DATASETS.items():
+        test, _ = make_test_set(data, freq, TEST_SET_SIZE)
+        for k in QUERY_SIZES:
+            print(f"\n## {data}, k = {k}: model after folding (item weights only) vs before folding "
+                  f"(item weights + that iteration's clue weights), {len(SEEDS)} seeds")
+            print("config".ljust(20) + "after acc@it20".rjust(16) + "before acc@it20".rjust(17)
+                  + "after P@10%".rjust(13) + "before P@10%".rjust(14) + "  user")
+            for config in CONFIGS:
+                user, truth = user_truth(CONFIGS[config], data, test)
+                pooled = "pooled" in CONFIGS[config]
+                after, before, p_after, p_before = [], [], [], []
+                for seed in SEEDS:
+                    path = log_path(data, k, config, seed)
+                    if not os.path.exists(path):
+                        continue
+                    final = parse_iter_weights(path).get(ITERATIONS - 1)
+                    pre = parse_prefold(path).get(ITERATIONS - 1)
+                    if final is None or pre is None:
+                        continue
+                    a = [sum(final[i] for i in p) for p in test]
+                    b = prefold_scores(test, pre[0], pre[1], pooled)
+                    after.append(pairwise_accuracy(a, truth)); before.append(pairwise_accuracy(b, truth))
+                    p_after.append(precision_at(a, truth)); p_before.append(precision_at(b, truth))
+                if not after:
+                    continue
+                f = lambda v: f"{100 * statistics.mean(v):.1f}±{100 * statistics.stdev(v):.1f}"
+                print(config.ljust(20) + f(after).rjust(16) + f(before).rjust(17) + f(p_after).rjust(13)
+                      + f(p_before).rjust(14) + "  " + user)
+
+
+def fit_pairwise(train, truth, features, steps=300000, lr=0.05, seed=0):
+    # offline pairwise logistic regression with SGD; features(p) -> set of active feature ids
+    rnd = random.Random(seed)
+    w = {}
+    data = [(features(p), y) for p, y in zip(train, truth)]
+    for _ in range(steps):
+        (fa, ya), (fb, yb) = rnd.sample(data, 2)
+        if ya == yb:
+            continue
+        if ya < yb:
+            fa, fb = fb, fa
+        d = sum(w.get(f, 0) for f in fa) - sum(w.get(f, 0) for f in fb)
+        g = 1 / (1 + math.exp(min(30, d)))
+        for f in fa - fb:
+            w[f] = w.get(f, 0) + lr * g
+        for f in fb - fa:
+            w[f] = w.get(f, 0) - lr * g
+    return lambda p: sum(w.get(f, 0) for f in features(p))
+
+
+def check_user():
+    # an items-only model should NOT be able to learn the combination user perfectly,
+    # while the same model plus one feature per combination should (that gap is what sub-patterns can close)
+    for data, freq in DATASETS.items():
+        test, _ = make_test_set(data, freq, TEST_SET_SIZE)
+        train, _ = make_test_set(data, freq, 2 * TEST_SET_SIZE, seed=999)
+        train = [p for p in train if p not in set(test)]
+        args = COMBO
+        _, t_test = user_truth(args, data, test)
+        _, t_train = user_truth(args, data, train)
+        combos = parse_combos(COMBOS)
+        print(f"\n### {data}: user {COMBOS}; patterns containing a combination: "
+              f"{sum(1 for p in test if any(S <= p for S, _ in combos))} of {len(test)}")
+        for name, feats in [("items only", lambda p: set(p)),
+                            ("items + combinations", lambda p: set(p) | {("c", j) for j, (S, _) in enumerate(combos) if S <= p})]:
+            model = fit_pairwise(train, t_train, feats)
+            pred = [model(p) for p in test]
+            print(f"{name:22s} pairwise accuracy {100 * pairwise_accuracy(pred, t_test):.1f}%   "
+                  f"P@10% {100 * precision_at(pred, t_test):.1f}%")
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("action", choices=["run", "eval", "variety", "check-user", "prefold"])
+    parser.add_argument("--xp", choices=list(EXPERIMENTS), default="multidisc")
+    args = parser.parse_args()
+    select_xp(args.xp)
+    {"run": run, "eval": evaluate, "variety": variety, "check-user": check_user, "prefold": prefold}[args.action]()

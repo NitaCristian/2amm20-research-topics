@@ -167,6 +167,49 @@ object ParseArgs {
         //-----------------------------------------------------------------------------------
         //-----------------------------------------------------------------------------------
         
+        msg = "max number of discriminating sub-patterns used per iteration (dispale, lutomDisc). Default Value : 1 \n\n"
+        val nbSubPatterns: Option = new Option("nd", "nb-disc", true, msg)
+        all_options.addOption(nbSubPatterns)
+        
+        msg = "how the discriminating sub-patterns are selected. Values: top | complementary (mmr) | coverage | gain | pairs. Default Value : gain \n\n"
+        val selection: Option = new Option("sel", "selection", true, msg)
+        all_options.addOption(selection)
+        
+        msg = "redundancy penalty of the complementary selection, between 0 (= top) and 1. Default Value : 1.0 \n\n"
+        val redundancy: Option = new Option("rw", "redundancy-weight", true, msg)
+        all_options.addOption(redundancy)
+        
+        msg = "coverage selection: max |correlation| between the query covers of two selected sub-patterns. Default Value : 0.5 \n\n"
+        val maxOverlap: Option = new Option("mo", "max-overlap", true, msg)
+        all_options.addOption(maxOverlap)
+
+        msg = "gain / pairs selection: stop when the gain is at most this share of the total (0..1). Default Value : 0 \n\n"
+        val minGain: Option = new Option("mg", "min-gain", true, msg)
+        all_options.addOption(minGain)
+
+        msg = "discriminating features: separate (one per sub-pattern) | pooled (one for all). Default Value : separate \n\n"
+        val expansion: Option = new Option("fx", "expansion", true, msg)
+        all_options.addOption(expansion)
+
+        msg = "weight transfer normalisation: m (divide by the number of sub-patterns) | none. Default Value : m \n\n"
+        val transferNorm: Option = new Option("tn", "transfer-norm", true, msg)
+        all_options.addOption(transferNorm)
+
+        msg = "clue features of earlier pairs: none (original, set to 0) | full (computed from their patterns). Default Value : none \n\n"
+        val clueHistory: Option = new Option("ch", "clue-history", true, msg)
+        all_options.addOption(clueHistory)
+
+        msg = "ComboRanker taste: item combinations with optional weights, e.g. 29,52;40,58 or 29,52:1;9,40:-1 \n\n"
+        val combos: Option = new Option("cb", "combos", true, msg)
+        all_options.addOption(combos)
+
+        msg = "initial weight of every feature. Default Value : 0 for letsip and dispale, 1 for lutom and lutomDisc \n\n"
+        val initWeight: Option = new Option("iw", "init-weight", true, msg)
+        all_options.addOption(initWeight)
+
+        //-----------------------------------------------------------------------------------
+        //-----------------------------------------------------------------------------------
+        
         val help: Option = new Option("h", "help", true, "help \n")
         //help.setRequired(true)
         all_options.addOption(help)
