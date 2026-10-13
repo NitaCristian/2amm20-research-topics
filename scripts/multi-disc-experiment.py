@@ -13,6 +13,7 @@ Experiments (--xp):
   sampling:  original initial weights (1, LIN aggregation) vs initial weights 0 (ADD aggregation)
   combo:     the two-combination user (ComboRanker) with every selection rule, plus a Gaussian-user control
   history:   the two-combination user with clue features computed for all earlier pairs (-ch full)
+  learner:   the two-combination user with more SCD sweeps per iteration (-sw), no L1 penalty (-la 0), all pairs
 
 Evaluation: the weights learned after each iteration (ITER_WEIGHTS lines, Items features only)
 score a fixed test set of frequent itemsets that were never shown to the user; we measure
@@ -84,6 +85,20 @@ EXPERIMENTS["history"] = ([10], {
     "combo-m3-mmr-full":    ["-m", "dispale", "-nd", "3", "-sel", "complementary"] + COMBO + FULL,
     "combo-m3-gain-full":   ["-m", "dispale", "-nd", "3", "-sel", "gain"] + COMBO + FULL,
     "combo-m3-pairs-full":  ["-m", "dispale", "-nd", "3", "-sel", "pairs"] + COMBO + FULL,
+})
+# is the learner the bottleneck? more SCD sweeps per iteration (-sw), no L1 penalty (-la 0), all pairs (-ch full)
+SW = ["-sw", "10"]
+EXPERIMENTS["learner"] = ([10], {
+    "combo-letsip":            ["-m", "letsip"] + COMBO,
+    "combo-letsip-sw10":       ["-m", "letsip"] + COMBO + SW,
+    "combo-m1":                ["-m", "dispale", "-nd", "1"] + COMBO,
+    "combo-m1-la0":            ["-m", "dispale", "-nd", "1", "-la", "0"] + COMBO,
+    "combo-m1-sw10":           ["-m", "dispale", "-nd", "1"] + COMBO + SW,
+    "combo-m1-sw10-full":      ["-m", "dispale", "-nd", "1"] + COMBO + SW + FULL,
+    "combo-m3-gain":           ["-m", "dispale", "-nd", "3", "-sel", "gain"] + COMBO,
+    "combo-m3-gain-la0":       ["-m", "dispale", "-nd", "3", "-sel", "gain", "-la", "0"] + COMBO,
+    "combo-m3-gain-sw10":      ["-m", "dispale", "-nd", "3", "-sel", "gain"] + COMBO + SW,
+    "combo-m3-gain-sw10-full": ["-m", "dispale", "-nd", "3", "-sel", "gain"] + COMBO + SW + FULL,
 })
 XP_DIR, QUERY_SIZES, CONFIGS = None, None, None
 
@@ -370,12 +385,12 @@ def prefold():
         for k in QUERY_SIZES:
             print(f"\n## {data}, k = {k}: model after folding (item weights only) vs before folding "
                   f"(item weights + that iteration's clue weights), {len(SEEDS)} seeds")
-            print("config".ljust(20) + "after acc@it20".rjust(16) + "before acc@it20".rjust(17)
-                  + "after P@10%".rjust(13) + "before P@10%".rjust(14) + "  user")
+            print("config".ljust(24) + "after acc@it20".rjust(16) + "before acc@it20".rjust(17)
+                  + "after P@10%".rjust(13) + "before P@10%".rjust(14) + "|w item|".rjust(10) + "|w clue|".rjust(10) + "  user")
             for config in CONFIGS:
                 user, truth = user_truth(CONFIGS[config], data, test)
                 pooled = "pooled" in CONFIGS[config]
-                after, before, p_after, p_before = [], [], [], []
+                after, before, p_after, p_before, w_items, w_clues = [], [], [], [], [], []
                 for seed in SEEDS:
                     path = log_path(data, k, config, seed)
                     if not os.path.exists(path):
@@ -388,11 +403,15 @@ def prefold():
                     b = prefold_scores(test, pre[0], pre[1], pooled)
                     after.append(pairwise_accuracy(a, truth)); before.append(pairwise_accuracy(b, truth))
                     p_after.append(precision_at(a, truth)); p_before.append(precision_at(b, truth))
+                    w_items.append(statistics.mean(abs(x) for x in pre[0][:76]))
+                    if len(pre[0]) > 76:
+                        w_clues.append(statistics.mean(abs(x) for x in pre[0][76:76 + max(1, len(pre[1]))]))
                 if not after:
                     continue
                 f = lambda v: f"{100 * statistics.mean(v):.1f}±{100 * statistics.stdev(v):.1f}"
-                print(config.ljust(20) + f(after).rjust(16) + f(before).rjust(17) + f(p_after).rjust(13)
-                      + f(p_before).rjust(14) + "  " + user)
+                g = lambda v: f"{statistics.mean(v):.3f}" if v else "-"
+                print(config.ljust(24) + f(after).rjust(16) + f(before).rjust(17) + f(p_after).rjust(13)
+                      + f(p_before).rjust(14) + g(w_items).rjust(10) + g(w_clues).rjust(10) + "  " + user)
 
 
 def fit_pairwise(train, truth, features, steps=300000, lr=0.05, seed=0):

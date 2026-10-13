@@ -197,6 +197,8 @@ def get_argParser():
     parser.add_argument("-ch", "--clue-history", type=str, default="none", choices=["none", "full"], help="clue features of the pairs of earlier iterations: `none' sets them to 0 (original DiSPaLe), `full' computes them from the stored patterns")
     parser.add_argument("-cb", "--combos", type=str, default="29,52;40,58", help="ComboRanker taste: item combinations with optional weights, e.g. '29,52;40,58' or '29,52:1;9,40:-1' (default for chess)")
     parser.add_argument("-iw", "--init-weight", type=float, default=None, help="initial weight of every feature (default: 0 for letsip and dispale, 1 for lutom and lutomDisc). The original code used 1, which saturates the logistic weight function and makes the sampling almost uniform")
+    parser.add_argument("-sw", "--scd-sweeps", type=int, default=1, help="number of SCD sweeps over the features per iteration (default 1, as in the original code)")
+    parser.add_argument("-la", "--lambda", dest="scd_lambda", type=float, default=1e-6, help="L1 penalty of SCD at the first iteration, multiplied by iteration+1 (default 1e-6, as in the original code)")
     parser.add_argument("-rw", "--redundancy-weight", type=float, default=1.0, help="redundancy penalty of the complementary selection, in [0, 1] (0 = same as top)")
     #
     return parser
@@ -234,7 +236,7 @@ def parse_parameters():
     selection:str = params.selection
     redundancyWeight:float = params.redundancy_weight
     initWeight = params.init_weight
-    extra = (params.max_overlap, params.min_gain, params.expansion, params.transfer_norm, params.combos, params.clue_history)
+    extra = (params.max_overlap, params.min_gain, params.expansion, params.transfer_norm, params.combos, params.clue_history, params.scd_sweeps, params.scd_lambda)
     #
     #-------------------------------------------------------------------
     #
@@ -288,7 +290,7 @@ def get_arguments():
     (method, dataname, freq, feats, oracle, algo, learner, ranker, nbIter) = parameters[:9]
     (queryK, queryR, eta, aggreg, featsUpdate, tilt, weightsFile, rndSeed, timeout) = parameters[9:18]
     (nbDisc, selection, redundancyWeight, initWeight, extra) = parameters[18:23]
-    (maxOverlap, minGain, expansion, transferNorm, combos, clueHistory) = extra
+    (maxOverlap, minGain, expansion, transferNorm, combos, clueHistory, scdSweeps, scdLambda) = extra
     #
     #-------------------------------------------------------------------
     #
@@ -306,7 +308,7 @@ def get_arguments():
     arguments = f"-m {method} -o {oracle} -a {algo} -F {feats} -r {ranker} -k {queryK} -f {minsup} -i {nbIter} "
     arguments += f"-le {learner} -ag {aggreg} -e {eta} -t {tilt} -l {queryR} -FU {featsUpdate} -s {rndSeed} "
     arguments += f"-d {data_file_cp4im} -FI {data_file_fimi} "
-    arguments += f"-nd {nbDisc} -sel {selection} -rw {redundancyWeight} -mo {maxOverlap} -mg {minGain} -fx {expansion} -tn {transferNorm} -ch {clueHistory}"
+    arguments += f"-nd {nbDisc} -sel {selection} -rw {redundancyWeight} -mo {maxOverlap} -mg {minGain} -fx {expansion} -tn {transferNorm} -ch {clueHistory} -sw {scdSweeps} -la {scdLambda}"
     if ranker == "ComboRanker":
         arguments += f" -cb '{combos}'"
     if initWeight is not None:

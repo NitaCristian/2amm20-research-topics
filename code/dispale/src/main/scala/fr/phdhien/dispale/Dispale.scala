@@ -221,11 +221,13 @@ class Dispale(
         val state: ScdState = WarmStart(all_w)
         current_state = state
 
-        SCD.optimize(
-                        loss, trainingExamples, currentIteration, 
-                        params.scd.copy( lambda= params.scd.lambda * (currentIteration + 1) ),
-                        state=state, m=Some(m), d=Some(nb_features)
-                    )(rnd)
+        // scdSweeps > 1: further sweeps continue from the weights and inner products of the previous one
+        val scd = params.scd.copy( lambda= params.scd.lambda * (currentIteration + 1) )
+        var result = SCD.optimize(loss, trainingExamples, currentIteration, scd, state=state, m=Some(m), d=Some(nb_features))(rnd)
+        (2 to params.scdSweeps).foreach { _ =>
+            result = SCD.optimize(loss, trainingExamples, currentIteration, scd, state=result._2, m=Some(m), d=Some(nb_features))(rnd)
+        }
+        result
     }
 
     //############################################################################################################

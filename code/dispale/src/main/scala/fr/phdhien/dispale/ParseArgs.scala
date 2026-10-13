@@ -207,6 +207,14 @@ object ParseArgs {
         val initWeight: Option = new Option("iw", "init-weight", true, msg)
         all_options.addOption(initWeight)
 
+        msg = "number of SCD sweeps over the features per iteration. Default Value : 1 \n\n"
+        val scdSweeps: Option = new Option("sw", "scd-sweeps", true, msg)
+        all_options.addOption(scdSweeps)
+
+        msg = "L1 penalty of SCD at the first iteration (multiplied by iteration+1). Default Value : 0.000001 \n\n"
+        val lambda: Option = new Option("la", "lambda", true, msg)
+        all_options.addOption(lambda)
+
         //-----------------------------------------------------------------------------------
         //-----------------------------------------------------------------------------------
         

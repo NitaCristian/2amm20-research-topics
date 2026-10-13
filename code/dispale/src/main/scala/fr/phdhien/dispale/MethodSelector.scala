@@ -239,9 +239,11 @@ class MethodSelector{
             //****************************************************************************************************************
             //****************************************************************************************************************
             val features = feature.compose(allFeatures:_*)
-            val scdParams = ScdParameters(iterations = FixedIterations(nb_ft), features_update = ft_update_all)
+            val scdParams = ScdParameters(iterations = FixedIterations(nb_ft), features_update = ft_update_all,
+                                            lambda = opt("lambda", "0.000001").toDouble)
             params = Parameters(tilt=tilt, featureMap=features, scd=scdParams, queryRetention=queryRetention,
-                                    iterations=nb_iterations, querySize=querySize, eta=eta, initWeight=initWeight)
+                                    iterations=nb_iterations, querySize=querySize, eta=eta, initWeight=initWeight,
+                                    scdSweeps=opt("scd-sweeps", "1").toInt.max(1))
             //****************************************************************************************************************
             //****************************************************************************************************************
         

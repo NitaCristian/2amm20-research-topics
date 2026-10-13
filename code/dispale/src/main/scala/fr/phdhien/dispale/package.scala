@@ -84,7 +84,8 @@ package object dispale {
                                     eta: Double = 0.5,
                                     var featureMap: Features,
                                     scd: ScdParameters,
-                                    initWeight: Double = 1.0     // initial weight of every feature
+                                    initWeight: Double = 1.0,    // initial weight of every feature
+                                    scdSweeps: Int = 1           // SCD sweeps over the features per iteration
                                 ) {
         //
         val pairsPerQuery: Int = querySize * (querySize - 1) / 2
