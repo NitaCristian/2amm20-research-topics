@@ -7,6 +7,7 @@ Experiments on DiSPaLe with several discriminating sub-patterns per iteration (-
   python3 scripts/multi-disc-experiment.py variety --xp NAME  # how varied the shown patterns are
   python3 scripts/multi-disc-experiment.py tastes             # the combination users of every dataset
   python3 scripts/multi-disc-experiment.py check-user         # offline items-only vs items+combinations models
+  python3 scripts/multi-disc-experiment.py curve --xp keep    # acc-combo after every iteration (pgfplots)
 
 Experiments (--xp):
   fidelity: surprisingness user (the paper's). The published code (-lg all) against each correction
@@ -593,6 +594,31 @@ def tastes():
                     print(f"{name:9s} {data:9s} taste{u}: {spec:14s} test patterns with a liked pair: {100 * share:.1f}%")
 
 
+def curve():
+    # mean acc-combo of the final-model type after every iteration, over all (dataset, user, seed); printed as
+    # pgfplots coordinates (the shown patterns of the whole run are excluded from the test set)
+    configs = [c for c in ["m1", "m3-gain", "m1-keep", "m3-gain-keep"] if c in CONFIGS]
+    for config in configs:
+        per_it = {it: [] for it in range(ITERATIONS)}
+        for data, freq in DATASETS.items():
+            test = test_set(data, freq)
+            for user in USERS:
+                for seed in seeds():
+                    path = trace_path(data, user, config, seed)
+                    if not finished(path):
+                        continue
+                    trace = read_trace(path)
+                    shown = shown_patterns(trace)
+                    patterns = [p for p in test if p not in shown]
+                    _, main = truths(data, freq, user, patterns)
+                    for it in range(ITERATIONS):
+                        model, _ = models(trace, it)
+                        if model:
+                            per_it[it].append(pairwise_accuracy([model(p) for p in patterns], main))
+        coords = " ".join(f"({it + 1},{100 * statistics.mean(v):.2f})" for it, v in per_it.items() if v)
+        print(f"% {config}: n = {len(per_it[0])} runs\n\\addplot coordinates {{{coords}}};")
+
+
 def fit_pairwise(train, truth, features, epochs=200, lr=0.5, pairs_per_epoch=20000, seed=0):
     # offline pairwise logistic regression (no penalty), mini-batch gradient steps on random pairs with
     # different truth; features(p) -> set of active feature ids
@@ -643,7 +669,7 @@ def check_user():
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("action", choices=["run", "eval", "timing", "variety", "tastes", "check-user"])
+    parser.add_argument("action", choices=["run", "eval", "timing", "variety", "tastes", "check-user", "curve"])
     parser.add_argument("--xp", choices=list(EXPERIMENTS), default="main")
     parser.add_argument("--ref", help="reference config of the paired tests (default: the experiment's)")
     args = parser.parse_args()
@@ -652,4 +678,4 @@ if __name__ == "__main__":
         assert args.ref in CONFIGS, f"unknown config {args.ref}"
         REFERENCE = args.ref
     {"run": run, "eval": evaluate, "timing": timing, "variety": variety, "tastes": tastes,
-     "check-user": check_user}[args.action]()
+     "check-user": check_user, "curve": curve}[args.action]()
