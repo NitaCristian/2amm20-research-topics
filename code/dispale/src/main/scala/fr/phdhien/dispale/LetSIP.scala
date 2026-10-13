@@ -13,7 +13,7 @@ import be.kuleuven.flexics._
 import be.kuleuven.pmlib.data.Dataset
 import be.kuleuven.pmlib.itemsets.Itemset
 //import be.kuleuven.scd._
-import be.kuleuven.scd.{ArrayVector, MutableVector, ScdState, SCD, ColdStart, HotStart, WarmStart, NewExamplesAppended, LogisticLoss}
+import be.kuleuven.scd.{ArrayVector, MutableVector, ScdState, SCD, ColdStart, HotStart, WarmStart, NewExamplesAppended, LogisticLoss, innerProduct}
 import be.kuleuven.weightgen._
 import be.kuleuven.weightgen.{Uniform, WeightFunction}
 
@@ -100,6 +100,16 @@ class LetSIP(
     //************************************************************************************************************
     protected override val logger = Logger(LoggerFactory.getLogger( get_method_log_name(method) ))
     //************************************************************************************************************
+    // base features (before any discriminating feature is added), for the trace
+    val nbBase: Int = featureMap.featureCount
+    val baseLabels: IndexedSeq[String] = featureMap.featureLabels
+    Trace.event("run", -1,
+        "method" -> Trace.str(method), "dataset" -> Trace.str(dataname), "user" -> Trace.str(user.toString),
+        "seed" -> seed.toString, "query_size" -> querySize.toString, "iterations" -> params.iterations.toString,
+        "retention" -> params.queryRetention.toString, "tilt" -> Trace.num(params.tilt), "eta" -> Trace.num(params.eta),
+        "init_weight" -> Trace.num(params.initWeight), "scd_sweeps" -> params.scdSweeps.toString,
+        "lambda" -> Trace.num(params.scd.lambda), "features" -> Trace.arr(baseLabels.map(Trace.str)))
+    //************************************************************************************************************
 
     //############################################################################################################
     //############################################################################################################
@@ -143,7 +153,10 @@ class LetSIP(
                     // *************** RANK PATTERNS BY DESCENDING ORDER OF THEIR WEIGHT **************
                     msg = s"Ranking $querySize itemsets"
                     logger.debug(s" ${msg.replace("ing", "ed")}")
+                    val sampled = currentQuery.clone()
+                    traceQuery()
                     user.rank(currentQuery)
+                    traceRanking(sampled)
                     
                     // *************** PAIRS OF PATTERNS TO BE USED FOR THE LEARNING ******************
                     msg = s"Generating ${params.pairsPerQuery} example pairs from $querySize itemsets"
@@ -175,17 +188,58 @@ class LetSIP(
     }
 
     //############################################################################################################
+    //################################################## TRACE ###################################################
+    //############################################################################################################
+
+    // score w.x of a pattern under the current base weights (what the sampler used)
+    def modelScore(p: Itemset): Double = innerProduct(all_w, features(p, featureMap), Some(nbBase))
+
+    def patternJson(p: Itemset, extra: (String, String)*): String = {
+        val items = p.items.toSeq.sorted
+        Trace.obj((extra ++ Seq(
+            "items" -> Trace.ints(items),
+            "names" -> Trace.arr(items.map(i => Trace.str(dataset.attributes(i).name))),
+            "support" -> p.size.toString,
+            "sampling_weight" -> Trace.num(p.getMetadata[Double]("wg4ps.weight").getOrElse(Double.NaN)),
+            "model_score" -> Trace.num(modelScore(p))
+        )): _*)
+    }
+
+    // the query in sampled order (the first `retained' patterns are kept from the previous iteration)
+    def traceQuery(): Unit = if(Trace.enabled) {
+        Trace.event("query", currentIteration, "retained" -> queryRetention.toString,
+            "patterns" -> Trace.arr(currentQuery.zipWithIndex.map { case (p, i) => patternJson(p, "pos" -> i.toString) }))
+    }
+
+    // the query ranked by the user (rank 0 = preferred), with each pattern's position in the sampled order
+    def traceRanking(sampled: Array[Itemset]): Unit = if(Trace.enabled) {
+        Trace.event("ranking", currentIteration,
+            "patterns" -> Trace.arr(currentQuery.zipWithIndex.map { case (p, r) =>
+                val userScore = scala.util.Try(user.describe(p).replace(',', '.').toDouble).toOption
+                patternJson(p, "rank" -> r.toString, "sampled_pos" -> sampled.indexWhere(_ eq p).toString,
+                    "user_score" -> userScore.map(Trace.num).getOrElse(Trace.str(user.describe(p))))
+            }))
+    }
+
+    // base weights; DiSPaLe adds the weights of the discriminating features
+    def traceWeights(event: String, extra: (String, String)*): Unit = if(Trace.enabled) {
+        Trace.event(event, currentIteration, (("weights" -> Trace.weights(baseLabels, i => all_w(i), nbBase)) +: extra): _*)
+    }
+
+    //############################################################################################################
     //########################################## LEARN USER PREFERENCES ##########################################
     //############################################################################################################
     
     // def run_learning(): (String, ScdState) = {
     def run_learning(): String = {
+        traceWeights("weights_before_learning")
         learner.toLowerCase match {
             case "scd" =>
                 scd_learn()
             case "ranksvm" | "rank_svm" =>
                 rankSVM_learn()
         }
+        traceWeights("weights_after_learning")
         
         // ********************** UPDATE THE LEARNED FUNCTION *************************************************
         learnedWeight = LogisticWeight(params.a, all_w, featureMap)

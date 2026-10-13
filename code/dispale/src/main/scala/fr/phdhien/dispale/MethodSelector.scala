@@ -244,6 +244,8 @@ class MethodSelector{
             params = Parameters(tilt=tilt, featureMap=features, scd=scdParams, queryRetention=queryRetention,
                                     iterations=nb_iterations, querySize=querySize, eta=eta, initWeight=initWeight,
                                     scdSweeps=opt("scd-sweeps", "1").toInt.max(1))
+            // structured trace (JSON Lines) of the run, written only when a file is given
+            Trace.open(opt("trace", ""))
             //****************************************************************************************************************
             //****************************************************************************************************************
         

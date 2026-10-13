@@ -28,6 +28,7 @@ import org.slf4j.LoggerFactory
 
 import scala.annotation.tailrec
 import scala.collection.mutable.HashMap
+import scala.collection.JavaConverters._
 import scala.math.exp
 
 /* 
@@ -94,6 +95,12 @@ class Dispale(
     icvObject.setSelection(multi.nbSubPatterns,
         SubPatternSelectors.create(multi.selection, multi.redundancyWeight, multi.maxOverlap, multi.minGain))
     val pooled: Boolean = multi.expansion.toLowerCase == "pooled"
+    Trace.event("run_dispale", -1,
+        "aggregation" -> Trace.str(aggregation_function), "nb_sub_patterns" -> multi.nbSubPatterns.toString,
+        "selection" -> Trace.str(multi.selection), "redundancy_weight" -> Trace.num(multi.redundancyWeight),
+        "max_overlap" -> Trace.num(multi.maxOverlap), "min_gain" -> Trace.num(multi.minGain),
+        "expansion" -> Trace.str(multi.expansion), "transfer_norm" -> Trace.str(multi.transferNorm),
+        "clue_history" -> Trace.str(multi.clueHistory))
     //************************************************************************************************************
     protected override val logger = Logger(LoggerFactory.getLogger("DiSPaLe"))  
     
@@ -122,7 +129,10 @@ class Dispale(
                     // *************** RANK PATTERNS BY DESCENDING ORDER OF THEIR WEIGHT **************
                     msg = s"Ranking $querySize itemsets"
                     logger.debug(s" ${msg.replace("ing", "ed")}")
+                    val sampled = currentQuery.clone()
+                    traceQuery()
                     user.rank(currentQuery)
+                    traceRanking(sampled)
                     
                     // *************** PAIRS OF PATTERNS TO BE USED FOR THE LEARNING ******************
                     msg = s"Generating ${params.pairsPerQuery} example pairs from $querySize itemsets"
@@ -161,6 +171,7 @@ class Dispale(
 
         // ********************** UPDATE WEIGHTS **************************************************************
         add_discriminant_features_to_features_list()
+        traceWeights("weights_before_learning", "clues" -> clueWeightsJson())
 
         // ********************** FORM PAIRS OF PATTERNS TO BE USED FOR THE LEARNING **************************
         rankedPairs(currentQuery, querySize).zipWithIndex.foreach { 
@@ -182,7 +193,9 @@ class Dispale(
         // -------------------------------------------------------------------------
         //
         
+        traceWeights("weights_after_learning", "clues" -> clueWeightsJson())
         remove_discriminant_features_from_features_list()
+        traceWeights("weights_after_fold")
 
         d = featureMap.featureCount
         
@@ -328,6 +341,18 @@ class Dispale(
         best_icv_itemsets.zipWithIndex.foreach { case (s, j) => 
             println(f"\n++$currentIteration-$j-${s.items}-icv=${icvObject.getSolutionICV(j)}%.4f\n")
         }
+        if(Trace.enabled) {
+            Trace.event("clues", currentIteration,
+                "candidates" -> icvObject.candidates.size.toString, "selection" -> Trace.str(multi.selection),
+                "sub_patterns" -> Trace.arr(best_icv_itemsets.zipWithIndex.map { case (s, j) =>
+                    val items = s.items.toSeq.sorted
+                    Trace.obj("j" -> j.toString, "items" -> Trace.ints(items),
+                        "names" -> Trace.arr(items.map(i => Trace.str(dataset.attributes(i).name))),
+                        "icv" -> Trace.num(icvObject.getSolutionICV(j)),
+                        "query_cover" -> Trace.arr(icvObject.getSolutionQueryCover(j).asScala.map(_.toString)),
+                        "support" -> s.size.toString)
+                }))
+        }
         
         icvObject.reset()
     }
@@ -347,6 +372,21 @@ class Dispale(
     
     //############################################################################################################
     //############################################################################################################
+
+    // weights of the discriminating features, per sub-pattern (or the single pooled one), for the trace;
+    // they are stored after the base features: base + t*g + j for type t and sub-pattern j
+    def clueWeightsJson(): String = {
+        val g = features_per_group
+        val types = Seq("presence") ++ (if(listFeatures_str.contains("F")) Seq("frequency") else Seq()) ++
+                        (if(listFeatures_str.contains("L")) Seq("length") else Seq())
+        Trace.arr((0 until g).map { j =>
+            val subPatterns = if(pooled) best_icv_itemsets.toSeq else Seq(best_icv_itemsets(j))
+            Trace.obj((Seq("j" -> j.toString,
+                           "items" -> Trace.arr(subPatterns.map(s => Trace.ints(s.items.toSeq.sorted)))) ++
+                       types.zipWithIndex.map { case (name, t) =>
+                           name -> Trace.num(if(nbBase + t*g + j < all_w.length) all_w(nbBase + t*g + j) else Double.NaN) }): _*)
+        })
+    }
 
     // number of features in each discriminating feature group: one per sub-pattern, or one when pooled
     def features_per_group: Int = if(pooled) 1 else best_icv_itemsets.length
@@ -381,6 +421,14 @@ class Dispale(
         def total(t: Int): Double =
             if(pooled) discriminating_weights(0)(t) else discriminating_weights.map(_(t)).sum / norm
 
+        // for the trace: (feature, weight before, signal d, weight after) of every changed base feature
+        val changes = scala.collection.mutable.ArrayBuffer[(Int, Double, Double, Double)]()
+        def update(i: Int, d: Double): Unit = {
+            val before = new_w(i)
+            new_w(i) = aggregation_value(before, d)
+            changes += ((i, before, d, new_w(i)))
+        }
+
         var it = 0
         while(it < listFeatures_str.size) {
             var deb = 0
@@ -391,23 +439,34 @@ class Dispale(
                 (deb until fin).foreach{ i =>
                     val containing = (0 until m).filter(j => best_icv_itemsets(j).items(i-deb))
                     if(containing.nonEmpty)
-                        new_w(i) = aggregation_value(new_w(i), containing.map(share).sum)
+                        update(i, containing.map(share).sum)
                 }
             }
             else if(listFeatures_str(it) == "T"){
                 (deb until fin).foreach{ i =>
                     val covering = (0 until m).filter(j => best_icv_itemsets(j).mask.isCovering(i-deb))
                     if(covering.nonEmpty)
-                        new_w(i) = aggregation_value(new_w(i), covering.map(share).sum)
+                        update(i, covering.map(share).sum)
                 }
             }
             else if(listFeatures_str(it) == "F"){
-                (deb until fin).foreach{ i => new_w(i) = aggregation_value(new_w(i), total(1)) }
+                (deb until fin).foreach{ i => update(i, total(1)) }
             }
             else if(listFeatures_str(it) == "L"){
-                (deb until fin).foreach{ i => new_w(i) = aggregation_value(new_w(i), total(2)) }
+                (deb until fin).foreach{ i => update(i, total(2)) }
             }
             it = it+1
+        }
+
+        if(Trace.enabled) {
+            Trace.event("fold", currentIteration,
+                "aggregation" -> Trace.str(aggregation_function), "eta" -> Trace.num(params.eta),
+                "norm" -> Trace.num(if(pooled) m.toDouble else norm), "expansion" -> Trace.str(multi.expansion),
+                "clue_weights" -> Trace.arr(discriminating_weights.map(w => Trace.arr(w.map(Trace.num)))),
+                "changes" -> Trace.arr(changes.map { case (i, before, d, after) =>
+                    Trace.obj("feature" -> i.toString, "label" -> Trace.str(if(i < baseLabels.length) baseLabels(i) else s"F$i"),
+                        "before" -> Trace.num(before), "d" -> Trace.num(d), "after" -> Trace.num(after))
+                }))
         }
 
         // remember each sub-pattern's own weights, to start from them when it is selected again

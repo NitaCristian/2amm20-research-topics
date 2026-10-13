@@ -123,7 +123,7 @@ def run_one(job):
     os.makedirs(os.path.dirname(out), exist_ok=True)
     cmd = ["python3", os.path.join(ROOT, "scripts", "test-program.py"), "-d", data, "-f", str(freq),
            "-k", str(k), "-i", str(ITERATIONS), "-o", "flexics", "-a", "eflexics", "-F", "Items",
-           "-l", "0", "-s", str(seed), "-to", "1800"] + CONFIGS[config]
+           "-l", "0", "-s", str(seed), "-to", "1800", "-tr", out[:-len(".log")] + ".trace.jsonl"] + CONFIGS[config]
     # own temp dir per run: the native library loader deletes the libraries other JVMs extracted to the temp dir
     tmp = os.path.join(XP_DIR, "tmp", f"{data}-k{k}-{config}-{seed}")
     os.makedirs(tmp, exist_ok=True)

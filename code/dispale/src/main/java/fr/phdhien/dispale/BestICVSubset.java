@@ -309,6 +309,15 @@ public class BestICVSubset {
 		return sol;
 	}
 	
+	// ranks (positions in the ranked query) of the query patterns containing the j-th selected sub-pattern
+	public List<Integer> getSolutionQueryCover(int j) {
+		List<Integer> ranks = new ArrayList<Integer>();
+		BitSet cov = selected.get(j).cover;
+		for (int r=cov.nextSetBit(0); r!=-1; r=cov.nextSetBit(r+1))
+			ranks.add(r);
+		return ranks;
+	}
+
 	// transactions of the dataset containing the j-th selected sub-pattern
 	public Set<Integer> getSolutionCover(int j) {
 		HashSet<Integer> currentCover = new HashSet<Integer>();

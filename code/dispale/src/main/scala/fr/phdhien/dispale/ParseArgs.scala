@@ -215,6 +215,10 @@ object ParseArgs {
         val lambda: Option = new Option("la", "lambda", true, msg)
         all_options.addOption(lambda)
 
+        msg = "file for the structured trace of the run (JSON Lines: query, ranking, sub-patterns, weights before/after learning and folding). Default Value : none \n\n"
+        val trace: Option = new Option("tr", "trace", true, msg)
+        all_options.addOption(trace)
+
         //-----------------------------------------------------------------------------------
         //-----------------------------------------------------------------------------------
         
