@@ -25,6 +25,7 @@ object Main extends App {
     val launcher: MethodSelector = MethodSelector()
     launcher.init(args)
     launcher.simulation()
+    Trace.close()
     
     println("\n###############################################")
     println("##################### END #####################")

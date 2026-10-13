@@ -15,13 +15,12 @@ public final class SubPatternSelectors {
 	public static SubPatternSelector create(String name, double redundancyWeight, double maxOverlap, double minGain) {
 		switch(name.toLowerCase()) {
 			case "top":           return new SubPatternSelector.Top();
-			case "complementary":
 			case "mmr":           return new SubPatternSelector.Mmr(redundancyWeight);
 			case "coverage":      return new SubPatternSelector.Coverage(maxOverlap);
 			case "gain":          return new SubPatternSelector.PartitionGain(minGain);
 			case "pairs":         return new SubPatternSelector.PairCoverage(minGain);
 			default: throw new IllegalArgumentException("unknown selection rule: " + name
-					+ " (expected top, complementary, coverage, gain or pairs)");
+					+ " (expected top, mmr, coverage, gain or pairs)");
 		}
 	}
 }

@@ -18,9 +18,10 @@ import fr.phdhien.dispale.BestICVSubset.Candidate;
 /**
  * Selects at most m discriminant sub-patterns among the candidates of one query.
  *
- * Every rule takes the candidates sorted by decreasing ICV (ties: longer first) and the number k of
- * query patterns, whose ranks are 0 (best) .. k-1. Every rule starts with the highest-ICV candidate,
- * so m = 1 always gives the original DiSPaLe sub-pattern.
+ * Every rule takes the candidates sorted by decreasing ICV (ties: longer first, then earlier in the
+ * enumeration), one per distinct query cover, and the number k of query patterns, whose ranks are
+ * 0 (best) .. k-1. Every rule starts with the first candidate, which is the sub-pattern the original
+ * top-1 rule returns on the same (corrected) search; BestICVSubset checks this at run time.
  */
 public interface SubPatternSelector {
 
@@ -52,12 +53,15 @@ public interface SubPatternSelector {
 	/** between-group sum of squares of the ranks 0..k-1, the groups being the query patterns
 	 *  that contain the same members of `chosen` (generalises ICV to a set of sub-patterns) */
 	static double partitionICV(List<Candidate> chosen, int k) {
-		Map<String, double[]> groups = new HashMap<String, double[]>(); // signature -> {count, sum of ranks}
+		if(chosen.size() > 63)
+			throw new IllegalArgumentException("at most 63 sub-patterns");
+		Map<Long, double[]> groups = new HashMap<Long, double[]>(); // signature bits -> {count, sum of ranks}
 		for(int r = 0; r < k; r++) {
-			StringBuilder sig = new StringBuilder();
-			for(Candidate c : chosen)
-				sig.append(c.cover.get(r) ? '1' : '0');
-			double[] g = groups.computeIfAbsent(sig.toString(), s -> new double[2]);
+			long sig = 0;
+			for(int j = 0; j < chosen.size(); j++)
+				if(chosen.get(j).cover.get(r))
+					sig |= 1L << j;
+			double[] g = groups.computeIfAbsent(sig, s -> new double[2]);
 			g[0] += 1;
 			g[1] += r;
 		}
@@ -79,7 +83,8 @@ public interface SubPatternSelector {
 	// rules
 	//==================================================================================================
 
-	/** the m highest-ICV candidates, no redundancy check */
+	/** the m highest-ICV candidates; since the candidates have distinct covers, no two of them split the
+	 *  query identically, but there is no other redundancy check */
 	class Top implements SubPatternSelector {
 		public List<Candidate> select(List<Candidate> sorted, int m, int k) {
 			return new ArrayList<Candidate>(sorted.subList(0, Math.min(m, sorted.size())));
@@ -87,7 +92,8 @@ public interface SubPatternSelector {
 	}
 
 	/** maximal marginal relevance: ICV * (1 - rw * max redundancy), redundancy being the larger
-	 *  Jaccard index of the query covers and of the items */
+	 *  Jaccard index of the query covers and of the items. This rewards diversity (dissimilar
+	 *  sub-patterns), not complementarity; PartitionGain measures complementarity */
 	class Mmr implements SubPatternSelector {
 		final double rw;
 		Mmr(double rw) { this.rw = rw; }
