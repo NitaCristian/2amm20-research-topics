@@ -64,6 +64,17 @@ trait LearningLogging {
   protected final def logNewIteration(iteration: Int): Unit =
     logger.debug(s"Iteration $iteration")
 
+  protected final def logTopKDiscPatterns(iteration: Int, topKPatterns: Set[(Set[Int], Double)]): Unit = {
+    logger.info(s"Iteration $iteration - Top-${topKPatterns.size} discriminating sub-patterns (items, ICV):")
+    topKPatterns.toSeq.sortBy(-_._2).zipWithIndex.foreach { case ((items, icv), rank) =>
+      logger.info(f"  Rank ${rank + 1}%d: (items = Set(${items.toSeq.sorted.mkString(", ")}), ICV = $icv%.6f)")
+    }
+    println(s"Iteration $iteration - Top-${topKPatterns.size} discriminating sub-patterns (items, ICV): " +
+      topKPatterns.toSeq.sortBy(-_._2).map { case (items, icv) =>
+        f"(Set(${items.toSeq.sorted.mkString(", ")}), $icv%.6f)"
+      }.mkString("Set(", ", ", ")"))
+  }
+
   protected final def logIterationOutcome(iteration: Int, query: Array[Itemset],
                                           learnedWeight: LogisticWeight, client: Ranker): Unit ={
     val GetWeight : Itemset => Double={_.getMetadata[Double]("wg4ps.weight").get}

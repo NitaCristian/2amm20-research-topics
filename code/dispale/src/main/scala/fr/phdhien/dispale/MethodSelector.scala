@@ -58,6 +58,7 @@ class MethodSelector{
     var oracle: String = "flexics"
     var algo: String = "eflexics"
     var learner: String = "scd"
+    var topKDisc: Int = 1
     //***********************************************************
     var ranker: Ranker = null
     var params: Parameters = null
@@ -99,7 +100,7 @@ class MethodSelector{
                         params=params, listFeatures=allFeatures, listFeatures_count=allFeatures_count, 
                         learner=learner, listFeatures_str=allFeatures_str_tab, minsup=minsup, 
                         oracle=oracle, algo=algo, aggregation_function=aggregation, 
-                        user=ranker, seed=seed
+                        user=ranker, seed=seed, topKDisc=topKDisc
                     )
         }
         // letsip_instance
@@ -144,6 +145,7 @@ class MethodSelector{
             aggregation = if(parse_cmd.hasOption("aggregation")) parse_cmd.getOptionValue("aggregation").toLowerCase else "lin"
             val features_update = if(parse_cmd.hasOption("features-update")) parse_cmd.getOptionValue("features-update") else "ALL"
             val weightsFile = if(parse_cmd.hasOption("weights")) parse_cmd.getOptionValue("weights") else null
+            topKDisc = if(parse_cmd.hasOption("K")) parse_cmd.getOptionValue("K").toInt else 1
             
             //****************************************************************************************************************
             // *************************** NOW WE PREPARE THE VARIABLES TO BE USED BY THE PROGRAM ****************************
@@ -221,7 +223,7 @@ class MethodSelector{
             val features = feature.compose(allFeatures:_*)
             val scdParams = ScdParameters(iterations = FixedIterations(nb_ft), features_update = ft_update_all)
             params = Parameters(tilt=tilt, featureMap=features, scd=scdParams, queryRetention=queryRetention,
-                                    iterations=nb_iterations, querySize=querySize, eta=eta)
+                                    iterations=nb_iterations, querySize=querySize, eta=eta, topKDisc=topKDisc)
             //****************************************************************************************************************
             //****************************************************************************************************************
         

@@ -68,7 +68,8 @@ package object dispale {
                                     tilt: Double = 10,
                                     eta: Double = 0.5,
                                     var featureMap: Features,
-                                    scd: ScdParameters
+                                    scd: ScdParameters,
+                                    topKDisc: Int = 1
                                 ) {
         //
         val pairsPerQuery: Int = querySize * (querySize - 1) / 2
@@ -83,6 +84,7 @@ package object dispale {
             featureMap
         }
         def getSCDParam:ScdParameters = scd
+        def getTopKDisc: Int = topKDisc
         def updateFeatureMap(feature: Features) = {
             featureMap = feature
         }
@@ -121,20 +123,13 @@ package object dispale {
         }
         
         def update_pairs_new(count: Int, id_update: Int) = { 
-            // update itemset description by adding or removing one new element
-            // if id_update==1 ==> add one new element
-            // if id_update==2 ==> remove one new element
-            if (id_update == 1){
-                val dv = Array.ofDim[Double](count)
-                (0 until (count-1)).foreach { i => dv(i) = diffVector(i) }
-                dv(count-1) = 0
-                diffVector = dv
-            }
-            else{
-                val dv = Array.ofDim[Double](count)
-                (0 until count).foreach { i => dv(i) = diffVector(i) }
-                diffVector = dv
-            }
+            // update itemset description by adding or removing new elements
+            // if id_update==1 ==> add new elements (expanded count)
+            // if id_update==2 ==> remove elements (shrinked count)
+            val dv = Array.ofDim[Double](count)
+            val limit = math.min(diffVector.length, count)
+            (0 until limit).foreach { i => dv(i) = diffVector(i) }
+            diffVector = dv
         }
   }
 

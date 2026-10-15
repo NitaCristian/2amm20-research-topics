@@ -26,6 +26,7 @@ import fr.phdhien.dispale.feature.{Features, FeatureMap, FeatureMapGenerator, Pa
 import org.slf4j.LoggerFactory
 
 import scala.annotation.tailrec
+import scala.collection.JavaConverters._
 import scala.collection.mutable.HashMap
 import scala.math.exp
 
@@ -48,13 +49,15 @@ object Dispale {
                 learner: String = "scd",
                 aggregation_function: String = "lin", 
                 user: Ranker = FrequencyRanker,
-                seed: Long = System.nanoTime().hashCode()
+                seed: Long = System.nanoTime().hashCode(),
+                topKDisc: Int = 1
             ): Dispale = {
         //
         new Dispale(
                         method, dataset, datasetPath, datasetPathFimi, params, 
                         listFeatures, listFeatures_count, listFeatures_str, 
-                        minsup, oracle, algo, learner, aggregation_function, user, seed
+                        minsup, oracle, algo, learner, aggregation_function, user, seed,
+                        topKDisc
                     )
         //
     }
@@ -75,13 +78,15 @@ class Dispale(
                 override val learner: String = "scd",
                 val aggregation_function: String = "lin", 
                 override val user: Ranker = FrequencyRanker, 
-                override val seed: Long = System.nanoTime().hashCode()
+                override val seed: Long = System.nanoTime().hashCode(),
+                val topKDisc: Int = 1
             ) extends LetSIP(method, dataset, datasetPath, params, listFeatures, minsup, oracle, algo, learner, user, seed) {
     //
     //************************************************************************************************************
     var allFeatures: Array[Features] = listFeatures
     //************************************************************************************************************
     var best_icv_itemset:Itemset = null
+    var topk_discriminating_patterns: Set[(Set[Int], Double)] = Set.empty
     var discriminatingPatterns = HashMap[Set[Int], Double]()  // used to save discriminating Patterns
     var discriminatingLengths = HashMap[Set[Int], Double]()  // used to save discriminating pattern length weight
     var discriminatingFrequencies = HashMap[Set[Int], Double]()  // used to save discriminating pattern frequency weight
@@ -310,7 +315,7 @@ class Dispale(
     //############################################################################################################
     //############################################################################################################
 
-    def mine_discriminating_patterns(): Unit = {
+    def mine_discriminating_patterns(topK: Int = topKDisc): Set[(Set[Int], Double)] = {
         var it = 0
         while(it < querySize){
             var pattern = new java.util.HashSet[Integer]()
@@ -325,7 +330,17 @@ class Dispale(
         // best_icv_itemset
         println(f"\n++$currentIteration-${best_icv_itemset.items}\n")
         
+        val topKList = icvObject.getTopKSubpatterns(topK).asScala
+        val topKSubpatterns: Set[(Set[Int], Double)] = topKList.map { sp =>
+            (sp.items.asScala.map(_.toInt).toSet, sp.icv)
+        }.toSet
+        topk_discriminating_patterns = topKSubpatterns
+
+        logTopKDiscPatterns(currentIteration, topKSubpatterns)
+        
         icvObject.reset()
+
+        topKSubpatterns
     }
     
     //############################################################################################################

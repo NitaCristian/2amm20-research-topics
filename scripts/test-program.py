@@ -188,6 +188,8 @@ def get_argParser():
     #
     parser.add_argument("-s", "--seed", type=int, nargs="?", help="the the random seed")
     #
+    parser.add_argument("-K", "--topk-disc", type=int, nargs=1, help="the number of top discriminating subpatterns to mine (default 1)")
+    #
     return parser
 #
 #=====================================================================================
@@ -219,6 +221,7 @@ def parse_parameters():
     rndSeed:int = params.seed[0] if params.seed else seed
     tilt:float = params.tilt[0] if params.tilt else 10.0
     timeout:int = params.timeout if params.timeout else 3600
+    topkDisc:int = params.topk_disc[0] if params.topk_disc else 1
     #
     #-------------------------------------------------------------------
     #
@@ -245,7 +248,7 @@ def parse_parameters():
     #-------------------------------------------------------------------
     #
     parameters = (method, data, freq, feats, oracle.lower(), algo.lower(), learner.lower(), rankFunction, nbIter, )
-    parameters += (queryK, queryRetention, eta, aggreg, featsUpdate, tilt, weightsFile, rndSeed, timeout)
+    parameters += (queryK, queryRetention, eta, aggreg, featsUpdate, tilt, weightsFile, rndSeed, timeout, topkDisc)
     
     print(f"\n\n{parameters}\n\n")
     print("~~~~~~~~~~~~~~~~~~~~~~\n")
@@ -267,7 +270,7 @@ def get_arguments():
     #
     parameters = parse_parameters()
     (method, dataname, freq, feats, oracle, algo, learner, ranker, nbIter) = parameters[:9]
-    (queryK, queryR, eta, aggreg, featsUpdate, tilt, weightsFile, rndSeed, timeout) = parameters[-9:]
+    (queryK, queryR, eta, aggreg, featsUpdate, tilt, weightsFile, rndSeed, timeout, topkDisc) = parameters[-10:]
     #
     #-------------------------------------------------------------------
     #
@@ -288,6 +291,9 @@ def get_arguments():
     #
     if str(weightsFile):
         arguments += f" -w {weightsFile}"
+    #
+    if topkDisc > 1:
+        arguments += f" -K {topkDisc}"
     #
     return (arguments, timeout)
     #

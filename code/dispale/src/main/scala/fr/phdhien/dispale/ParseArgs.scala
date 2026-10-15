@@ -164,6 +164,9 @@ object ParseArgs {
         val weightsFile: Option= new Option("w", "weights", true, "the weights file \n\n")
         all_options.addOption(weightsFile)
 
+        val topkDisc: Option = new Option("K", "topk-disc", true, "the number of top discriminating subpatterns to mine (default 1) \n\n")
+        all_options.addOption(topkDisc)
+
         //-----------------------------------------------------------------------------------
         //-----------------------------------------------------------------------------------
         

@@ -10,9 +10,14 @@
 package fr.phdhien.dispale;
 
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.BitSet;
+import java.util.Collections;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 import fr.phdhien.dispale.tools.DataSet;
@@ -31,12 +36,14 @@ public class BestICVSubset {
 	public BitSet[] allTransactions;
 	public BitSet bestICVSubsetBitSet;
 	public HashSet<Integer> bestICVSubset;
+	public Map<BitSet, Double> allCandidateICVs;
 	
 	public BestICVSubset(int nbElem, String datasetPath) {
 		this.iter = 0;
 		this.nbElem = nbElem;
 		this.bestICVSubsetBitSet = new BitSet();
 		this.bestICVSubset = new HashSet<Integer>();
+		this.allCandidateICVs = new HashMap<BitSet, Double>();
 		
 		this.all_ranks = new int[nbElem];
 		this.all_itemsets = new BitSet[nbElem];
@@ -131,6 +138,7 @@ public class BestICVSubset {
 			
 			double icv = interclassVariance(all_ranks, coveredRank, unCoveredRank);
 			subItemsets.add(it);
+			allCandidateICVs.put((BitSet) it.clone(), icv);
 			if(icv > highestICV) {
 				highestICV = icv;
 				top1Pattern = (BitSet) it.clone();
@@ -185,6 +193,7 @@ public class BestICVSubset {
 							}
 						
 							double icv = interclassVariance(all_ranks, coveredRank, unCoveredRank);
+							allCandidateICVs.put((BitSet) new_subItemset.clone(), icv);
 							if(icv > highestICV) {
 								highestICV = icv;
 								top1Pattern = (BitSet) new_subItemset.clone();
@@ -271,11 +280,71 @@ public class BestICVSubset {
 		iter = 0;
 		currentPosition = 0;
 		bestICVSubset.clear();
+		allCandidateICVs.clear();
 		for(int i=0; i<nbElem; i++) {
 			all_ranks[i] = -1;
 			all_itemsets[i].clear();
 			allTransactions[i].clear();
 		}
+	}
+	
+	public static class SubpatternICV {
+		public Set<Integer> items;
+		public double icv;
+
+		public SubpatternICV(Set<Integer> items, double icv) {
+			this.items = items;
+			this.icv = icv;
+		}
+
+		public Set<Integer> getItems() {
+			return items;
+		}
+
+		public double getIcv() {
+			return icv;
+		}
+
+		@Override
+		public String toString() {
+			return "(" + items + ", " + icv + ")";
+		}
+	}
+
+	public List<SubpatternICV> getTopKSubpatterns(int k) {
+		List<Map.Entry<BitSet, Double>> list = new ArrayList<Map.Entry<BitSet, Double>>(allCandidateICVs.entrySet());
+		Collections.sort(list, new Comparator<Map.Entry<BitSet, Double>>() {
+			@Override
+			public int compare(Map.Entry<BitSet, Double> o1, Map.Entry<BitSet, Double> o2) {
+				int cmp = Double.compare(o2.getValue(), o1.getValue());
+				if (cmp != 0) return cmp;
+				int cardCmp = Integer.compare(o2.getKey().cardinality(), o1.getKey().cardinality());
+				if (cardCmp != 0) return cardCmp;
+				return o1.getKey().toString().compareTo(o2.getKey().toString());
+			}
+		});
+
+		List<SubpatternICV> result = new ArrayList<SubpatternICV>();
+		int limit = Math.min(Math.max(k, 1), list.size());
+		for (int i = 0; i < limit; i++) {
+			Map.Entry<BitSet, Double> entry = list.get(i);
+			Set<Integer> items = new HashSet<Integer>();
+			BitSet bs = entry.getKey();
+			for (int it = bs.nextSetBit(0); it != -1; it = bs.nextSetBit(it + 1)) {
+				items.add(it);
+			}
+			result.add(new SubpatternICV(items, entry.getValue()));
+		}
+		return result;
+	}
+
+	public Map<Set<Integer>, Double> getTopKSubsetsMap(int k) {
+		List<SubpatternICV> subpatterns = getTopKSubpatterns(k);
+		Map<Set<Integer>, Double> map = new HashMap<Set<Integer>, Double>();
+		for (SubpatternICV sp : subpatterns) {
+			map.put(sp.getItems(), sp.getIcv());
+		}
+		return map;
 	}
 	
 }
