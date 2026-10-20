@@ -112,6 +112,9 @@ EXPERIMENTS["keep"] = (EXPERIMENTS["main"][0], TASTES, dict(EXPERIMENTS["main"][
     "m3-top-keep":       M3 + ["-sel", "top", "-kp", "keep"],
     "m3-gain-keep":      M3 + ["-sel", "gain", "-kp", "keep"],
     "m3-gain-keep-sw10": M3 + ["-sel", "gain", "-kp", "keep", "-sw", "10"],
+    # baselines for the 10-sweep row: separate the effect of m from the effect of the extra sweeps
+    "m1-keep-sw10":      ["-m", "dispale", "-nd", "1", "-kp", "keep", "-sw", "10"],
+    "m3-top-keep-sw10":  M3 + ["-sel", "top", "-kp", "keep", "-sw", "10"],
 }), "m1")
 XP_DIRS = {"keep": "main"}
 TIMING_SEEDS = [1, 2]
